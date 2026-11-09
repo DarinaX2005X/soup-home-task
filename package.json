@@ -1,0 +1,16 @@
+{
+  "name": "simmer",
+  "private": true,
+  "type": "module",
+  "workspaces": ["sdk", "server", "web", "tests"],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w web",
+    "typecheck": "tsc -p server --noEmit && tsc -p web --noEmit && tsc -p tests --noEmit",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "test:api": "npm run api -w tests",
+    "test:e2e": "npm run e2e -w tests",
+    "test:load": "npm run load -w tests"
+  },
+  "engines": { "node": ">=22" }
+}
