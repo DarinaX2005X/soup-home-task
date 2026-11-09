@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { ApiError, Client } from '@simmer/sdk';
+import { navigate } from './router.ts';
 
 export const API_BASE = '/api';
 const STORAGE_KEY = 'simmer.key';
@@ -51,7 +52,11 @@ export function signIn(apiKey: string): void {
 }
 
 export function signOut(reason: SignedOutReason = null): void {
-  if (state.session || reason) set({ session: null, reason });
+  if (!state.session && !reason) return;
+  set({ session: null, reason });
+  // The address may name a run of the project that was just closed. It must
+  // not stay in the address bar for whoever signs in next.
+  if (location.pathname !== '/') navigate('/', true);
 }
 
 /** Any 401 means the key stopped working. Everything on screen belongs to it, so it all goes. */

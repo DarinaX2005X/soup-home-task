@@ -29,6 +29,8 @@ services:
       APP_DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
       API_LOG_FILE: /logs/api.log
       EVIDENCE_DIR: /evidence
+      CAN_CRASH_API: "1"
+      SEED: ${SEED:-20261110}
     volumes:
       - logs:/logs:ro
       - ./docs/evidence:/evidence

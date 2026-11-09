@@ -27,3 +27,20 @@ FROM nginx:1.27-alpine AS web
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
 EXPOSE 80
+
+# Test runner: API tests (vitest), browser tests (Playwright) and the load test.
+FROM mcr.microsoft.com/playwright:v1.65.0-noble AS tests
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY sdk/package.json sdk/
+COPY server/package.json server/
+COPY web/package.json web/
+COPY tests/package.json tests/
+RUN npm ci --ignore-scripts
+COPY tsconfig.base.json ./
+COPY sdk sdk
+COPY web/src web/src
+COPY tests tests
+WORKDIR /app/tests
+ENV NO_COLOR=1 CI=1
+CMD ["bash", "run-all.sh"]
