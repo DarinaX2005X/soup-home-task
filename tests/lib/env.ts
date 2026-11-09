@@ -1,6 +1,8 @@
 // Where the system under test lives. Defaults match the test compose stack
 // when the tests are run from the host.
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
+/** A second API instance on the same database, when the stack has one. */
+export const API2_URL = process.env.API2_URL;
 export const WEB_URL = process.env.WEB_URL ?? 'http://localhost:8080';
 export const OWNER_DATABASE_URL =
   process.env.OWNER_DATABASE_URL ?? 'postgres://simmer_owner:owner-local-only@localhost:54329/simmer';

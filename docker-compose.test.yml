@@ -17,6 +17,20 @@ services:
     volumes:
       - logs:/logs
 
+  # A second API instance on the same database. Tests write through one
+  # instance and read live through the other.
+  api2:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
+      MIGRATE_DATABASE_URL: postgres://simmer_owner:${OWNER_DB_PASSWORD:-owner-local-only}@db:5432/simmer
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-app-local-only}
+    depends_on:
+      api:
+        condition: service_healthy
+
   tests:
     build:
       context: .
@@ -25,6 +39,7 @@ services:
     environment:
       WEB_URL: http://web
       API_URL: http://api:3000
+      API2_URL: http://api2:3000
       OWNER_DATABASE_URL: postgres://simmer_owner:${OWNER_DB_PASSWORD:-owner-local-only}@db:5432/simmer
       APP_DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
       API_LOG_FILE: /logs/api.log

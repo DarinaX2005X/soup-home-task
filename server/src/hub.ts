@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import pg from 'pg';
 import {
@@ -131,13 +132,10 @@ export class Connection {
   /** Reads and writes one page after the cursor. Returns the number of points sent. */
   private async sendNextPage(): Promise<number> {
     const limit = this.hub.config.streamPageRows;
-    const rows = await withProject(this.hub.db, this.auth.projectId, async (tx) => {
-      const found = await tx.query(
-        'select key, step, value, seq from points where run_id = $1 and seq > $2 order by seq limit $3',
-        [this.runId, this.cursor, limit + 1],
-      );
-      return found.rows;
-    });
+    const { rows } = await this.hub.db.query(
+      'select key, step, value, seq from stream_page($1, $2, $3, $4)',
+      [this.auth.projectId, this.runId, this.cursor, limit + 1],
+    );
     if (rows.length === 0) return 0;
     let take = rows.length;
     if (rows.length > limit) {
@@ -198,10 +196,16 @@ export class Connection {
 }
 
 /**
- * Tracks open streams and wakes them when Postgres says a run has new data or
- * a key was revoked. Notifications only say "look again". If one is lost, or
- * the listener connection drops, the heartbeat finds the same data a few
- * seconds later.
+ * Tracks open streams and wakes them when a run has new data or a key was
+ * revoked. A wake-up only says "look again": the data is always read from the
+ * table. If a wake-up is lost, or the listener connection drops, the heartbeat
+ * finds the same data a few seconds later.
+ *
+ * Streams on this instance are woken directly, right after the commit. Other
+ * instances hear about it through Postgres NOTIFY, sent outside the write
+ * transaction and at most once every 25 ms for all runs together. NOTIFY
+ * inside the write transaction was measured to serialize every commit in the
+ * database behind one lock.
  */
 export class Hub {
   private readonly byRun = new Map<string, Set<Connection>>();
@@ -209,6 +213,10 @@ export class Hub {
   private readonly byProject = new Map<string, number>();
   private listener: pg.Client | undefined;
   private stopping = false;
+  /** Tells our own notifications apart from those of other instances. */
+  private readonly instance = randomUUID().slice(0, 8);
+  private readonly outbox = new Set<string>();
+  private outboxTimer: ReturnType<typeof setTimeout> | undefined;
   readonly db: Db;
   readonly config: Config;
   readonly log: Logger;
@@ -257,6 +265,25 @@ export class Hub {
     else this.byProject.delete(connection.auth.projectId);
   }
 
+  /** Call after a commit that changed a run: new points, or its state. */
+  published(runId: string, stateChanged = false): void {
+    for (const c of this.byRun.get(runId) ?? []) c.wake(stateChanged);
+    this.outbox.add(stateChanged ? `${runId}:state` : runId);
+    this.outboxTimer ??= setTimeout(() => void this.flushOutbox(), 25);
+  }
+
+  private async flushOutbox(): Promise<void> {
+    this.outboxTimer = undefined;
+    const payloads = [...this.outbox].map((entry) => `${this.instance}:${entry}`);
+    this.outbox.clear();
+    try {
+      await this.db.query("select pg_notify('run_seq', p) from unnest($1::text[]) as p", [payloads]);
+    } catch (error) {
+      // Other instances will find the data at their next heartbeat.
+      this.log.warn({ err: error }, 'could not notify other instances');
+    }
+  }
+
   async start(): Promise<void> {
     await this.listen();
   }
@@ -265,6 +292,7 @@ export class Hub {
     this.stopping = true;
     const all = [...this.byRun.values()].flatMap((set) => [...set]);
     await Promise.all(all.map((c) => c.close('shutdown')));
+    clearTimeout(this.outboxTimer);
     await this.listener?.end().catch(() => {});
   }
 
@@ -280,9 +308,9 @@ export class Hub {
     client.on('end', () => lost());
     client.on('notification', (message) => {
       if (message.channel === 'run_seq') {
-        const runId = message.payload?.slice(0, 36);
-        const stateChanged = message.payload?.endsWith(':state') ?? false;
-        for (const c of this.byRun.get(runId ?? '') ?? []) c.wake(stateChanged);
+        const [from, runId, flag] = (message.payload ?? '').split(':');
+        if (from === this.instance) return;
+        for (const c of this.byRun.get(runId ?? '') ?? []) c.wake(flag === 'state');
       } else if (message.channel === 'key_revoked') {
         for (const c of [...(this.byKey.get(message.payload ?? '') ?? [])]) {
           void c.close('key_revoked');

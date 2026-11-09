@@ -71,8 +71,7 @@ export interface IngestHooks {
 
 /**
  * Stores one batch inside the caller's transaction. Either every effect below
- * commits or none does: the points, the batch record, the run counters and the
- * notification that wakes streams.
+ * commits or none does: the points, the batch record and the run counters.
  */
 export async function storeBatch(
   tx: Tx,
@@ -84,15 +83,17 @@ export async function storeBatch(
   // Locks the run row. Batches for one run are stored one after another, which
   // is what makes seq order equal commit order. Other runs are not affected.
   // Row-level security makes another project's run look like no run at all.
-  const run = await tx.query('select last_seq from runs where id = $1 for update', [runId]);
-  if (run.rowCount === 0) throw notFound();
-
-  const earlier = await tx.query(
-    'select payload_hash, result from batches where run_id = $1 and batch_id = $2',
+  // The same statement fetches the record of this batch_id, if it was seen.
+  const run = await tx.query(
+    `select r.last_seq, b.payload_hash, b.result
+     from runs r left join batches b on b.run_id = r.id and b.batch_id = $2
+     where r.id = $1 for update of r`,
     [runId, batch.batchId],
   );
-  if (earlier.rowCount) {
-    const stored = earlier.rows[0];
+  if (run.rowCount === 0) throw notFound();
+
+  const stored = run.rows[0];
+  if (stored.payload_hash) {
     if (!batch.hash.equals(stored.payload_hash)) {
       throw new HttpError(
         409,
@@ -132,12 +133,12 @@ export async function storeBatch(
        where p.run_id = $1`,
       [runId, rest.map((p) => p.key), rest.map((p) => p.step)],
     );
-    const stored = new Map<string, number>(
+    const current = new Map<string, number>(
       existing.rows.map((r) => [`${r.key}\n${r.step}`, r.value as number]),
     );
     for (const point of rest) {
-      const current = stored.get(`${point.key}\n${point.step}`);
-      if (current !== undefined && sameValue(current, point.value)) duplicates++;
+      const value = current.get(`${point.key}\n${point.step}`);
+      if (value !== undefined && sameValue(value, point.value)) duplicates++;
       else conflicts.push({ key: point.key, step: point.step });
     }
   }
@@ -150,26 +151,30 @@ export async function storeBatch(
     conflicts,
   };
 
+  // The run counters and the batch record go in one statement. Waking the
+  // streams is the caller's job, after commit (see Hub.published).
+  const record =
+    'insert into batches (run_id, project_id, batch_id, payload_hash, result) values ($1, $2, $3, $4, $5)';
+  const recordArgs = [runId, projectId, batch.batchId, batch.hash, JSON.stringify(result)];
   if (accepted > 0) {
     await tx.query(
-      `update runs set last_seq = $2, point_count = point_count + $3,
-         conflict_count = conflict_count + $4, updated_at = now()
-       where id = $1`,
-      [runId, seq, accepted, conflicts.length],
+      `with bump as (
+         update runs set last_seq = $6, point_count = point_count + $7,
+           conflict_count = conflict_count + $8, updated_at = now()
+         where id = $1
+       )
+       ${record}`,
+      [...recordArgs, seq, accepted, conflicts.length],
     );
-    // Delivered to listeners only if and when this transaction commits.
-    await tx.query("select pg_notify('run_seq', $1)", [`${runId}:${seq}`]);
   } else if (conflicts.length > 0) {
-    await tx.query('update runs set conflict_count = conflict_count + $2 where id = $1', [
-      runId,
-      conflicts.length,
-    ]);
+    await tx.query(
+      `with bump as (update runs set conflict_count = conflict_count + $6 where id = $1)
+       ${record}`,
+      [...recordArgs, conflicts.length],
+    );
+  } else {
+    await tx.query(record, recordArgs);
   }
-
-  await tx.query(
-    'insert into batches (run_id, project_id, batch_id, payload_hash, result) values ($1, $2, $3, $4, $5)',
-    [runId, projectId, batch.batchId, batch.hash, JSON.stringify(result)],
-  );
 
   await hooks.beforeCommit?.();
   return { ...result, replayed: false };

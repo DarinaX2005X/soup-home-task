@@ -28,6 +28,8 @@ export const config = {
   streamPageRows: int('STREAM_PAGE_ROWS', 5000),
   maxStreamsPerProject: int('MAX_STREAMS_PER_PROJECT', 200),
   bodyLimit: int('BODY_LIMIT_BYTES', 1_048_576),
+  /** Requests waiting for a database connection beyond this are refused with 503. */
+  maxQueuedForDb: int('MAX_QUEUED_FOR_DB', 400),
   logFile: process.env.LOG_FILE || undefined,
   logLevel: process.env.LOG_LEVEL ?? 'info',
   /** Fault injection and process stats for the test suite. Off unless set to 1. */

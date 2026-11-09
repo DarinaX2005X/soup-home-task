@@ -80,6 +80,8 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   const app = Fastify({
     bodyLimit: config.bodyLimit,
     genReqId: () => randomUUID(),
+    // One log line per request (written below) instead of Fastify's two.
+    disableRequestLogging: true,
     logger: {
       level: config.logLevel,
       // The default serializers log method, URL and status. Request headers
@@ -96,6 +98,23 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   const hub = new Hub(db, config, app.log);
 
   app.decorateRequest('auth', null);
+
+  // Under more load than the database pool can serve, requests used to pile up
+  // in memory with latency growing without bound. Now the API says so early.
+  // Refusing is safe for writers: a retry carries the same batch_id.
+  app.addHook('onRequest', async (request) => {
+    if (request.routeOptions.config.public) return;
+    if (db.waitingCount > config.maxQueuedForDb) {
+      throw new HttpError(503, 'overloaded', 'The server is overloaded. Retry shortly.');
+    }
+  });
+
+  app.addHook('onResponse', async (request, reply) => {
+    request.log.info(
+      { method: request.method, url: request.url, status: reply.statusCode, ms: Math.round(reply.elapsedTime) },
+      'request',
+    );
+  });
 
   // Authentication runs before the body is read or anything about the target
   // is looked at, so nothing an anonymous caller sends can reveal whether an
@@ -123,6 +142,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   app.setErrorHandler((error: any, request, reply) => {
     if (error instanceof HttpError) {
+      if (error.status === 503) reply.header('retry-after', '1');
       reply.status(error.status).send({
         error: { code: error.code, message: error.message, details: error.details },
       });
@@ -336,9 +356,9 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
          where id = $1 returning ${RUN_COLUMNS}`,
         [runId, status],
       );
-      await tx.query("select pg_notify('run_seq', $1)", [`${runId}:state`]);
       return updated.rows[0];
     });
+    hub.published(runId, true);
     return toRun(row);
   });
 
@@ -357,11 +377,14 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
       throw error;
     }
     const fault = config.testHooks ? request.headers['x-test-fault'] : undefined;
-    return withProject(db, projectId, (tx) =>
+    const result = await withProject(db, projectId, (tx) =>
       storeBatch(tx, projectId, runId, batch, {
         beforeCommit: typeof fault === 'string' ? () => injectFault(fault) : undefined,
       }),
     );
+    // Only now is the batch committed and visible to the streams' reads.
+    if (result.seq !== null && !result.replayed) hub.published(runId);
+    return result;
   });
 
   app.get('/runs/:id/metrics', async (request) => {

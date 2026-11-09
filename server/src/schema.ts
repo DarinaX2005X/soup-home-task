@@ -124,4 +124,30 @@ export const migrations: { id: string; sql: string }[] = [
       grant select, insert on points to simmer_app;
     `,
   },
+  {
+    id: '002_stream_page',
+    sql: /* sql */ `
+      -- One page of a run's log in a single round trip. A stream calls this on
+      -- every wake-up, so the begin / set_config / select / commit sequence
+      -- was four round trips on the hottest path. The function runs with the
+      -- caller's rights: row-level security applies exactly as before, and
+      -- the project setting lasts for this one statement.
+      create function stream_page(p_project uuid, p_run uuid, p_after bigint, p_limit int)
+        returns table (key text, step bigint, value double precision, seq bigint)
+        language plpgsql volatile
+        set search_path = public, pg_temp
+        as $$
+        begin
+          perform set_config('app.project_id', p_project::text, true);
+          return query
+            select p.key, p.step, p.value, p.seq from points p
+            where p.run_id = p_run and p.seq > p_after
+            order by p.seq
+            limit p_limit;
+        end
+        $$;
+      revoke all on function stream_page(uuid, uuid, bigint, int) from public;
+      grant execute on function stream_page(uuid, uuid, bigint, int) to simmer_app;
+    `,
+  },
 ];

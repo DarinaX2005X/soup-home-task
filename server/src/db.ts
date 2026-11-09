@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { UUID_PATTERN } from '@simmer/sdk';
 import { migrations } from './schema.ts';
 
 export type Db = pg.Pool;
@@ -22,6 +23,7 @@ export async function withProject<T>(
   projectId: string,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
+  if (!UUID_PATTERN.test(projectId)) throw new Error('withProject needs a project id');
   const tx = await db.connect();
   let broken: Error | undefined;
   // The pool only listens for errors on idle clients. If this connection dies
@@ -32,8 +34,9 @@ export async function withProject<T>(
   };
   tx.on('error', onError);
   try {
-    await tx.query('begin');
-    await tx.query("select set_config('app.project_id', $1, true)", [projectId]);
+    // One round trip instead of two. A multi-statement query cannot take
+    // parameters, so the id is checked to be a UUID before it is put in.
+    await tx.query(`begin; select set_config('app.project_id', '${projectId}', true)`);
     const result = await fn(tx);
     await tx.query('commit');
     return result;
