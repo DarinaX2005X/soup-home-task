@@ -33,8 +33,8 @@
   <text class="b" x="460" y="132">2. Open a transaction bound to that</text>
   <text class="b" x="476" y="152">project (row-level security).</text>
   <text class="b" x="460" y="174">3. Store the batch, all or nothing.</text>
-  <text class="b" x="460" y="196">4. NOTIFY run:seq inside the same</text>
-  <text class="b" x="476" y="216">transaction.</text>
+  <text class="b" x="460" y="196">4. After commit, wake the streams here</text>
+  <text class="b" x="476" y="216">and NOTIFY the other instances.</text>
 
   <rect class="db" x="870" y="48" width="290" height="376" rx="14"/>
   <text class="h" x="890" y="82">PostgreSQL</text>
@@ -65,7 +65,7 @@
   <text class="h" x="460" y="422">Stream hub, inside the API</text>
   <text class="b" x="460" y="450">One reader per open page, each with</text>
   <text class="b" x="460" y="470">its own cursor and no queue.</text>
-  <text class="b" x="460" y="498">Woken by NOTIFY, it reads the points</text>
+  <text class="b" x="460" y="498">Woken after a commit, it reads the points</text>
   <text class="b" x="460" y="518">after its cursor and writes them at the</text>
   <text class="b" x="460" y="538">pace the socket drains.</text>
   <text class="b" x="460" y="566">Every 5 s it re-reads the run and</text>
@@ -82,7 +82,7 @@
   <text class="b" x="60" y="586">means reload, and the page says so.</text>
 
   <path class="hint" marker-end="url(#o)" d="M870,330 C820,330 800,360 764,400"/>
-  <text class="s" x="716" y="322" fill="#a8540a">NOTIFY: "look again"</text>
+  <text class="s" x="700" y="322" fill="#a8540a">wake-up: "look again"</text>
   <path class="read" marker-end="url(#g)" d="M870,410 C830,440 800,470 764,480"/>
   <text class="s" x="776" y="520">points after</text>
   <text class="s" x="776" y="538">the cursor</text>
