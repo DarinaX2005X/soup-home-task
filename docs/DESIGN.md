@@ -1,6 +1,6 @@
 # Design
 
-Written before the code. Where the implementation later disagreed with this page, the difference is listed in [NOTE.md](NOTE.md), and this page was left as it was.
+Written before the code and left as it was. The implementation departs from it in one place: `NOTIFY` is sent after the write transaction, not inside it, because inside it every commit in the database waited on one lock.
 
 ## Data and the two orders
 

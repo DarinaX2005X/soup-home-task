@@ -7,9 +7,7 @@ Take-home task for the Soup Full-Stack Engineer internship. Training scripts sen
 | Read this | For |
 | --- | --- |
 | [docs/DESIGN.md](docs/DESIGN.md) | The one-page design, written and committed before the code |
-| [docs/NOTE.md](docs/NOTE.md) | The note: consistency, isolation, silent failures, verdict |
-| [docs/REFLECTION.md](docs/REFLECTION.md) | What surprised me, what still concerns me, and how AI was used |
-| [docs/evidence/](docs/evidence/) | Raw, unedited output of every test and load run quoted in the note |
+| [docs/evidence/](docs/evidence/) | Raw, unedited output of every test and load run |
 
 ## Run it
 
@@ -35,7 +33,7 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test run --rm tests
 ```
 
-Output is printed and also written to `docs/evidence/`. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such: it documents the six-connection limit described in the note.
+Output is printed and also written to `docs/evidence/`. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such: it documents that a browser opens at most six connections to one site over HTTP/1.1, so a seventh open run page cannot connect.
 
 Load test (50 runs, 10 points per second each, two live viewers per run, 60 seconds) and the timing measurement:
 
