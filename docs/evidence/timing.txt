@@ -1,0 +1,24 @@
+# Timing: can project A tell a run of project B from a run that does not exist?
+4000 requests of each kind per endpoint, interleaved in random order, one at a time
+the foreign run holds 50 000 points
+
+GET /runs/{id}
+  foreign   n=4034  median 2.034 ms   p10 1.559   p90 3.578
+  missing   n=3919  median 2.037 ms   p10 1.548   p90 3.603
+  missing2  n=4047  median 2.057 ms   p10 1.550   p90 3.670
+  foreign vs missing: 3 µs apart.  missing vs missing: 20 µs apart (noise floor).
+
+GET /runs/{id}/metrics
+  foreign   n=4016  median 1.504 ms   p10 1.139   p90 2.528
+  missing   n=3955  median 1.509 ms   p10 1.137   p90 2.553
+  missing2  n=4029  median 1.518 ms   p10 1.138   p90 2.531
+  foreign vs missing: 5 µs apart.  missing vs missing: 9 µs apart (noise floor).
+
+GET /runs/{id}/events
+  foreign   n=4089  median 1.243 ms   p10 1.028   p90 2.127
+  missing   n=3950  median 1.248 ms   p10 1.029   p90 2.145
+  missing2  n=3961  median 1.239 ms   p10 1.031   p90 2.147
+  foreign vs missing: 5 µs apart.  missing vs missing: 8 µs apart (noise floor).
+
+Reading: a difference of the same size as the noise floor is no usable signal at this sample size.
+This was measured over the Docker network on one machine. It cannot rule out a difference smaller than the noise.

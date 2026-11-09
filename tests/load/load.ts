@@ -28,13 +28,16 @@ const PROJECTS = Number(process.env.PROJECTS ?? 5);
 const WORKERS = Number(process.env.WORKERS ?? 6);
 /** Viewers go through nginx, as a browser would. */
 const VIEW_BASE = process.env.VIEW_BASE ?? `${WEB_URL}/api`;
+/** Several API instances can be given, separated by commas. Runs are dealt out between them. */
+const INGEST_URLS = (process.env.INGEST_URLS ?? API_URL).split(',');
+const VIEW_URLS = (process.env.VIEW_URLS ?? VIEW_BASE).split(',');
 const LABEL = process.env.LABEL ?? `${RUNS}x${RATE}-batch${BATCH_MS}ms`;
 const PER_BATCH = Math.max(1, Math.round((RATE * BATCH_MS) / 1000));
 const TICKS = Math.round((DURATION_S * 1000) / BATCH_MS);
 
 interface Assignment {
   startAt: number;
-  runs: { id: string; secret: string; offsetMs: number }[];
+  runs: { id: string; secret: string; offsetMs: number; ingestUrl: string; viewUrl: string }[];
 }
 
 interface WorkerReport {
@@ -55,7 +58,7 @@ async function worker(assignment: Assignment): Promise<WorkerReport> {
   const controller = new AbortController();
   const runs = assignment.runs.map((r) => ({
     ...r,
-    client: new Client({ baseUrl: API_URL, apiKey: r.secret }),
+    client: new Client({ baseUrl: r.ingestUrl, apiKey: r.secret }),
     step: 0,
     acknowledged: 0,
   }));
@@ -66,7 +69,7 @@ async function worker(assignment: Assignment): Promise<WorkerReport> {
       const viewer = { runId: run.id, received: 0, cursor: 0, broken: null as string | null };
       void (async () => {
         try {
-          const response = await fetch(`${VIEW_BASE}/runs/${run.id}/events`, {
+          const response = await fetch(`${run.viewUrl}/runs/${run.id}/events`, {
             headers: { authorization: `Bearer ${run.secret}` },
             signal: controller.signal,
           });
@@ -162,14 +165,21 @@ const ms = (p: ReturnType<typeof percentiles>) =>
 async function parent() {
   say(`# Load: ${RUNS} runs x ${RATE} points/s for ${DURATION_S} s`);
   say(`batch every ${BATCH_MS} ms (${PER_BATCH} point${PER_BATCH === 1 ? '' : 's'} per request, ${(RUNS * 1000) / BATCH_MS} requests/s in total)`);
-  say(`${VIEWERS} live viewers per run through ${VIEW_BASE}, ${PROJECTS} projects, ingest to ${API_URL}`);
+  say(`${VIEWERS} live viewers per run through ${VIEW_URLS.join(' and ')}, ${PROJECTS} projects, ingest to ${INGEST_URLS.join(' and ')}`);
   say(`${WORKERS} generator processes, started ${new Date().toISOString()}`);
 
   const tenants = await Promise.all(Array.from({ length: PROJECTS }, (_, i) => newTenant(`load-${i}`)));
   const runs = await Promise.all(
     Array.from({ length: RUNS }, async (_, i) => {
       const tenant = tenants[i % PROJECTS]!;
-      return { id: (await tenant.client.createRun(`load-${i}`)).id, secret: tenant.secret, offsetMs: Math.floor((i / RUNS) * BATCH_MS) };
+      return {
+        id: (await tenant.client.createRun(`load-${i}`)).id,
+        secret: tenant.secret,
+        offsetMs: Math.floor((i / RUNS) * BATCH_MS),
+        ingestUrl: INGEST_URLS[i % INGEST_URLS.length]!,
+        // Offset by one, so with two instances a run is written through one and watched through the other.
+        viewUrl: VIEW_URLS[(i + 1) % VIEW_URLS.length]!,
+      };
     }),
   );
 

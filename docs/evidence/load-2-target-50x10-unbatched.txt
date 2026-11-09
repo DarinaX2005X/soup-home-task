@@ -1,19 +1,19 @@
 # Load: 50 runs x 10 points/s for 60 s
 batch every 100 ms (1 point per request, 500 requests/s in total)
 2 live viewers per run through http://web/api, 5 projects, ingest to http://api:3000
-6 generator processes, started 2026-11-09T23:11:33.420Z
+6 generator processes, started 2026-11-09T23:16:44.929Z
 
-requests            30000 sent, 1174 failed {"overloaded":1174}
-points              30000 planned, 28826 acknowledged, 28826 stored
-ingest latency      p50 597 ms, p95 793 ms, p99 896 ms, max 1700 ms (n=28826)
+requests            30000 sent, 64 failed {"overloaded":64}
+points              30000 planned, 29936 acknowledged, 29936 stored
+ingest latency      p50 105 ms, p95 382 ms, p99 612 ms, max 1218 ms (n=29936)
                     measured from the moment a batch was due to the answer
-delivery lag        p50 748 ms, p95 1067 ms, p99 1291 ms, max 2031 ms (n=57652)
+delivery lag        p50 130 ms, p95 464 ms, p99 774 ms, max 1456 ms (n=59872)
                     measured from the moment a batch was due to a viewer holding its points
 viewers             100: 100 complete, 0 incomplete, 0 broken
-requests in flight  peak 81 in one generator
-generator clock     at most 10 ms late (large means the generator, not the system, was the limit)
-api process         rss peak 134 MB, db pool waiters peak 401, stream buffer peak 0 KB
-whole run           60.6 s for 60 s of traffic
+requests in flight  peak 69 in one generator
+generator clock     at most 12 ms late (large means the generator, not the system, was the limit)
+api process         rss peak 125 MB, db pool waiters peak 399, stream buffer peak 0 KB
+whole run           60.2 s for 60 s of traffic
 invariants          all hold
 
 RESULT: FAILED, see the lines above

@@ -1,139 +1,132 @@
 
  RUN  v5.1.0 /app/tests
 
- ✓ api/isolation.test.ts > project A cannot read project B > every read of a run in B answers exactly like a run that does not exist 39ms
- ✓ api/isolation.test.ts > project A cannot read project B > lists contain only the caller's own rows 18ms
- ✓ api/isolation.test.ts > project A cannot read project B > a request cannot name a project: parameters and headers that try are ignored 47ms
- ✓ api/isolation.test.ts > project A cannot write to project B > no write aimed at B changes anything in B 50ms
- ✓ api/isolation.test.ts > project A cannot write to project B > an invalid body sent to a run in B is still a 404, so a 422 cannot confirm the id 70ms
+ ✓ api/isolation.test.ts > project A cannot read project B > every read of a run in B answers exactly like a run that does not exist 32ms
+ ✓ api/isolation.test.ts > project A cannot read project B > lists contain only the caller's own rows 13ms
+ ✓ api/isolation.test.ts > project A cannot read project B > a request cannot name a project: parameters and headers that try are ignored 34ms
+ ✓ api/isolation.test.ts > project A cannot write to project B > no write aimed at B changes anything in B 39ms
+ ✓ api/isolation.test.ts > project A cannot write to project B > an invalid body sent to a run in B is still a 404, so a 422 cannot confirm the id 50ms
  ✓ api/isolation.test.ts > project A cannot write to project B > a batch_id that exists in B tells A nothing: it is unique per run, not globally 10ms
- ✓ api/isolation.test.ts > project A cannot subscribe to project B > opening B's stream is refused before any stream starts 8ms
- ✓ api/isolation.test.ts > project A cannot subscribe to project B > A's open stream carries nothing of B while B is writing 550ms
- ✓ api/isolation.test.ts > project A cannot subscribe to project B > one project filling its stream allowance does not block another project 1132ms
- ✓ api/isolation.test.ts > project A cannot guess its way in > ids are random UUIDs, so one id says nothing about the next 139ms
- ✓ api/isolation.test.ts > project A cannot guess its way in > ids that are not UUIDs, or try to smuggle SQL or paths, get the same 404 20ms
- ✓ api/isolation.test.ts > project A cannot guess its way in > wrong, malformed, missing and revoked keys are all the same 401 33ms
- ✓ api/isolation.test.ts > nothing is shared through a cache > every answer forbids storing it, and no validator is offered 28ms
- ✓ api/isolation.test.ts > nothing is shared through a cache > the same URL through the web proxy gives each key its own data, in both orders 37ms
- ✓ api/isolation.test.ts > nothing is shared through a cache > a pooled database connection carries no project from the previous request 338ms
- ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > the application role is not a superuser, owns no tables and cannot bypass row security 16ms
- ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > a query with no WHERE at all returns only the current project 51ms
- ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > with no project set, every table is empty 25ms
+ ✓ api/isolation.test.ts > project A cannot subscribe to project B > opening B's stream is refused before any stream starts 7ms
+ ✓ api/isolation.test.ts > project A cannot subscribe to project B > A's open stream carries nothing of B while B is writing 462ms
+ ✓ api/isolation.test.ts > project A cannot subscribe to project B > one project filling its stream allowance does not block another project 745ms
+ ✓ api/isolation.test.ts > project A cannot guess its way in > ids are random UUIDs, so one id says nothing about the next 104ms
+ ✓ api/isolation.test.ts > project A cannot guess its way in > ids that are not UUIDs, or try to smuggle SQL or paths, get the same 404 14ms
+ ✓ api/isolation.test.ts > project A cannot guess its way in > wrong, malformed, missing and revoked keys are all the same 401 25ms
+ ✓ api/isolation.test.ts > nothing is shared through a cache > every answer forbids storing it, and no validator is offered 24ms
+ ✓ api/isolation.test.ts > nothing is shared through a cache > the same URL through the web proxy gives each key its own data, in both orders 26ms
+ ✓ api/isolation.test.ts > nothing is shared through a cache > a pooled database connection carries no project from the previous request 335ms
+ ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > the application role is not a superuser, owns no tables and cannot bypass row security 9ms
+ ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > a query with no WHERE at all returns only the current project 106ms
+ ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > with no project set, every table is empty 288ms
  ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > writes into another project are rejected or touch nothing 10ms
- ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > stored points cannot be changed or deleted by the application role at all 6ms
- ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > the key lookup function is the only way across, and it returns nothing useful without a full hash 1ms
- ✓ api/isolation.test.ts > what else could leak > error bodies never echo ids, SQL, stack traces or key material 21ms
- ✓ api/isolation.test.ts > what else could leak > no response carries permissive cross-origin headers 6ms
- ✓ api/isolation.test.ts > what else could leak > the API log contains no key, only key ids 325ms
- ✓ api/stream.test.ts > catch-up > a reader that starts at zero receives the whole table as one unbroken chain 262ms
- ✓ api/stream.test.ts > catch-up > a reader that resumes from a cursor receives exactly what came after it 105ms
- ✓ api/stream.test.ts > catch-up > the cursor is also accepted as ?after=, for clients that cannot set headers 47ms
- ✓ api/stream.test.ts > catch-up > a cursor ahead of the server gets a reset and then everything from zero 30ms
- ✓ api/stream.test.ts > catch-up > cursor -1 is refused 11ms
+ ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > stored points cannot be changed or deleted by the application role at all 4ms
+ ✓ api/isolation.test.ts > the database itself refuses, even if the application forgets > the key lookup function is the only way across, and it returns nothing useful without a full hash 2ms
+ ✓ api/isolation.test.ts > what else could leak > error bodies never echo ids, SQL, stack traces or key material 19ms
+ ✓ api/isolation.test.ts > what else could leak > no response carries permissive cross-origin headers 4ms
+ ✓ api/isolation.test.ts > what else could leak > the API log contains no key, only key ids 804ms
+ ✓ api/stream.test.ts > catch-up > a reader that starts at zero receives the whole table as one unbroken chain 228ms
+ ✓ api/stream.test.ts > catch-up > a reader that resumes from a cursor receives exactly what came after it 91ms
+ ✓ api/stream.test.ts > catch-up > the cursor is also accepted as ?after=, for clients that cannot set headers 54ms
+ ✓ api/stream.test.ts > catch-up > a cursor ahead of the server gets a reset and then everything from zero 29ms
+ ✓ api/stream.test.ts > catch-up > cursor -1 is refused 12ms
+ ✓ api/stream.test.ts > catch-up > cursor abc is refused 11ms
+ ✓ api/stream.test.ts > catch-up > cursor 1.5 is refused 10ms
 stdout | api/stream.test.ts > live delivery > a batch reaches an open stream without waiting for the heartbeat
-live delivery took 20 ms from request start
+live delivery took 18 ms from request start
 
- ✓ api/stream.test.ts > catch-up > cursor abc is refused 17ms
- ✓ api/stream.test.ts > catch-up > cursor 1.5 is refused 11ms
- ✓ api/stream.test.ts > catch-up > cursor 99999999999999999999 is refused 11ms
- ✓ api/stream.test.ts > live delivery > a batch reaches an open stream without waiting for the heartbeat 43ms
- ✓ api/stream.test.ts > live delivery > finishing a run reaches an open stream at once 43ms
- ✓ api/stream.test.ts > live delivery > 30 batches written concurrently to one run arrive as an unbroken chain 253ms
- ✓ api/stream.test.ts > live delivery > a batch that commits slowly holds back later ones, so no seq is ever visible out of order 748ms
+ ✓ api/stream.test.ts > catch-up > cursor 99999999999999999999 is refused 9ms
+ ✓ api/stream.test.ts > live delivery > a batch reaches an open stream without waiting for the heartbeat 38ms
+ ✓ api/stream.test.ts > live delivery > finishing a run reaches an open stream at once 38ms
+ ✓ api/stream.test.ts > live delivery > 30 batches written concurrently to one run arrive as an unbroken chain 210ms
+ ✓ api/stream.test.ts > live delivery > a batch that commits slowly holds back later ones, so no seq is ever visible out of order 746ms
 stdout | api/stream.test.ts > events lost on reconnect > a reader cut at random bytes 40 times during ingestion ends up equal to the table
 cuts=40 connects=41 gaps=0 resyncs=0 cursor=240 points=3840
 
- ✓ api/stream.test.ts > events lost on reconnect > a reader cut at random bytes 40 times during ingestion ends up equal to the table 1603ms
+ ✓ api/stream.test.ts > events lost on reconnect > a reader cut at random bytes 40 times during ingestion ends up equal to the table 1223ms
 stdout | api/stream.test.ts > events lost on reconnect > a committed write that sends no notification at all is found by the heartbeat
-delivered 4993 ms after a write with no notification
+delivered 4998 ms after a write with no notification
 
- ✓ api/stream.test.ts > events lost on reconnect > a committed write that sends no notification at all is found by the heartbeat 5027ms
+ ✓ api/stream.test.ts > events lost on reconnect > a committed write that sends no notification at all is found by the heartbeat 5031ms
 stdout | api/stream.test.ts > events lost on reconnect > when the notification listener dies, batches written meanwhile still arrive
-delivered 522 ms after the write, with the listener killed
+delivered 18 ms after the write, with the listener killed
 
- ✓ api/stream.test.ts > events lost on reconnect > when the notification listener dies, batches written meanwhile still arrive 2081ms
+ ✓ api/stream.test.ts > events lost on reconnect > when the notification listener dies, batches written meanwhile still arrive 1608ms
 stdout | api/stream.test.ts > a slow reader > a reader that stops reading costs the server one page, then catches up completely
-while the reader was paused: peak buffered 74268 bytes, rss 100 MB before, peak 117 MB
+while the reader was paused: peak buffered 76268 bytes, rss 131 MB before, peak 133 MB
 
- ✓ api/stream.test.ts > a slow reader > a reader that stops reading costs the server one page, then catches up completely 8908ms
+ ✓ api/stream.test.ts > a slow reader > a reader that stops reading costs the server one page, then catches up completely 10788ms
 stdout | api/stream.test.ts > a slow reader > a reader that never reads again is cut off after the stall timeout
-stalled stream closed by the server after 45162 ms
+stalled stream closed by the server after 30626 ms
 
- × api/stream.test.ts > a slow reader > a reader that never reads again is cut off after the stall timeout 45180ms
-   → expected false to be true // Object.is equality
- ✓ api/ingest.test.ts > the same batch sent again > same batch_id and content returns the first answer and stores nothing new 41ms
- ✓ api/ingest.test.ts > the same batch sent again > the content hash ignores the order points are listed in 15ms
- ✓ api/ingest.test.ts > the same batch sent again > same batch_id with different content is refused with 409 15ms
- ✓ api/ingest.test.ts > the same batch sent again > a new batch_id carrying already stored points counts them as duplicates 36ms
- ✓ api/ingest.test.ts > the same batch sent again > a different value for a stored point is a conflict and the first value stays 24ms
- ✓ api/ingest.test.ts > what a batch may contain > steps may arrive in any order, storage is by step 29ms
- ✓ api/ingest.test.ts > what a batch may contain > NaN and infinities survive the round trip 19ms
+ ✓ api/stream.test.ts > a slow reader > a reader that never reads again is cut off after the stall timeout 50407ms
+ ✓ api/ingest.test.ts > the same batch sent again > same batch_id and content returns the first answer and stores nothing new 43ms
+ ✓ api/ingest.test.ts > the same batch sent again > the content hash ignores the order points are listed in 17ms
+ ✓ api/ingest.test.ts > the same batch sent again > same batch_id with different content is refused with 409 17ms
+ ✓ api/ingest.test.ts > the same batch sent again > a new batch_id carrying already stored points counts them as duplicates 37ms
+ ✓ api/ingest.test.ts > the same batch sent again > a different value for a stored point is a conflict and the first value stays 22ms
+ ✓ api/ingest.test.ts > what a batch may contain > steps may arrive in any order, storage is by step 28ms
+ ✓ api/ingest.test.ts > what a batch may contain > NaN and infinities survive the round trip 23ms
  ✓ api/ingest.test.ts > what a batch may contain > no batch_id is refused with 422 and stores nothing 10ms
- ✓ api/ingest.test.ts > what a batch may contain > batch_id that is not a UUID is refused with 422 and stores nothing 9ms
+ ✓ api/ingest.test.ts > what a batch may contain > batch_id that is not a UUID is refused with 422 and stores nothing 11ms
  ✓ api/ingest.test.ts > what a batch may contain > empty points is refused with 422 and stores nothing 11ms
  ✓ api/ingest.test.ts > what a batch may contain > a fractional step is refused with 422 and stores nothing 10ms
- ✓ api/ingest.test.ts > what a batch may contain > a negative step is refused with 422 and stores nothing 9ms
- ✓ api/ingest.test.ts > what a batch may contain > a step beyond 2^53 is refused with 422 and stores nothing 9ms
- ✓ api/ingest.test.ts > what a batch may contain > a null value is refused with 422 and stores nothing 9ms
- ✓ api/ingest.test.ts > what a batch may contain > a string value is refused with 422 and stores nothing 9ms
- ✓ api/ingest.test.ts > what a batch may contain > a key with a space is refused with 422 and stores nothing 10ms
- ✓ api/ingest.test.ts > what a batch may contain > one point twice with different values is refused with 422 and stores nothing 12ms
+ ✓ api/ingest.test.ts > what a batch may contain > a negative step is refused with 422 and stores nothing 13ms
+ ✓ api/ingest.test.ts > what a batch may contain > a step beyond 2^53 is refused with 422 and stores nothing 11ms
+ ✓ api/ingest.test.ts > what a batch may contain > a null value is refused with 422 and stores nothing 10ms
+ ✓ api/ingest.test.ts > what a batch may contain > a string value is refused with 422 and stores nothing 14ms
+ ✓ api/ingest.test.ts > what a batch may contain > a key with a space is refused with 422 and stores nothing 17ms
+ ✓ api/ingest.test.ts > what a batch may contain > one point twice with different values is refused with 422 and stores nothing 14ms
  ✓ api/ingest.test.ts > what a batch may contain > 1001 points is refused with 422 and stores nothing 11ms
- ✓ api/ingest.test.ts > what a batch may contain > a body that is not JSON is refused with 400 8ms
- ✓ api/ingest.test.ts > what a batch may contain > a body over the size limit is refused with 413 10ms
- ✓ api/ingest.test.ts > partial writes > a failure after the writes and before commit leaves no trace, and the retry succeeds 102ms
- ✓ api/ingest.test.ts > partial writes > a database connection killed in the middle of a batch rolls the batch back 40ms
- ✓ api/keys.test.ts > an old key after rotation > stops working for every kind of request the moment the rotation answers 91ms
+ ✓ api/ingest.test.ts > what a batch may contain > a body that is not JSON is refused with 400 9ms
+ ✓ api/ingest.test.ts > what a batch may contain > a body over the size limit is refused with 413 11ms
+ ✓ api/ingest.test.ts > partial writes > a failure after the writes and before commit leaves no trace, and the retry succeeds 110ms
+ ✓ api/ingest.test.ts > partial writes > a database connection killed in the middle of a batch rolls the batch back 37ms
+ ✓ api/keys.test.ts > an old key after rotation > stops working for every kind of request the moment the rotation answers 92ms
 stdout | api/keys.test.ts > an old key after rotation > a stream opened with the old key is closed by the server, not left running
-stream closed 10 ms after rotation
+stream closed 0 ms after rotation
 
- ✓ api/keys.test.ts > an old key after rotation > a stream opened with the old key is closed by the server, not left running 349ms
+ ✓ api/keys.test.ts > an old key after rotation > a stream opened with the old key is closed by the server, not left running 350ms
 stdout | api/keys.test.ts > an old key after rotation > if the revocation signal is lost, the stream still dies at the next heartbeat
-stream closed 4975 ms after a revocation with no signal
+stream closed 4987 ms after a revocation with no signal
 
- ✓ api/keys.test.ts > an old key after rotation > if the revocation signal is lost, the stream still dies at the next heartbeat 5043ms
+ ✓ api/keys.test.ts > an old key after rotation > if the revocation signal is lost, the stream still dies at the next heartbeat 5031ms
 stdout | api/keys.test.ts > an old key after rotation > a key revoked in the middle of a burst of writes cuts the burst cleanly
-26 writes accepted before the revocation, 34 refused after it
+19 writes accepted before the revocation, 41 refused after it
 
+ ✓ api/keys.test.ts > an old key after rotation > a key revoked in the middle of a burst of writes cuts the burst cleanly 274ms
+ ✓ api/keys.test.ts > key management > the only active key cannot be revoked, so a project cannot lock itself out 33ms
 stdout | api/keys.test.ts > key management > two keys revoking each other at the same time cannot both succeed
 mutual revocation outcomes: 200, 409
 
- ✓ api/keys.test.ts > an old key after rotation > a key revoked in the middle of a burst of writes cuts the burst cleanly 271ms
- ✓ api/keys.test.ts > key management > the only active key cannot be revoked, so a project cannot lock itself out 24ms
- ✓ api/keys.test.ts > key management > two keys revoking each other at the same time cannot both succeed 18ms
- ✓ api/keys.test.ts > key management > a key is shown once and only its hash is stored 14ms
+ ✓ api/keys.test.ts > key management > two keys revoking each other at the same time cannot both succeed 37ms
+ ✓ api/keys.test.ts > key management > a key is shown once and only its hash is stored 18ms
+stdout | api/instances.test.ts > two API instances > a batch written through one instance reaches a stream on the other within a second
+delivered across instances in 43 ms
+
+ ✓ api/instances.test.ts > two API instances > a batch written through one instance reaches a stream on the other within a second 102ms
+ ✓ api/instances.test.ts > two API instances > 100 concurrent batches through one instance arrive whole on both 742ms
+ ✓ api/instances.test.ts > two API instances > writes alternate between instances and seq stays one unbroken sequence 413ms
+stdout | api/instances.test.ts > two API instances > a key rotated on one instance closes its streams on the other and is refused there
+stream on the other instance closed 10 ms after rotation
+
+ ✓ api/instances.test.ts > two API instances > finishing a run on one instance shows on the other at once 61ms
+ ✓ api/instances.test.ts > two API instances > a key rotated on one instance closes its streams on the other and is refused there 34ms
+stdout | api/instances.test.ts > two API instances > with every notification listener killed, the other instance still delivers
+delivered across instances 514 ms after the write, with both listeners killed
+
+ ✓ api/instances.test.ts > two API instances > with every notification listener killed, the other instance still delivers 538ms
+ ↓ api/instances.test.ts > two API instances (skipped: no second instance in this stack)
 stdout | api/crash.test.ts > the API process dying before commit loses the batch whole, and a reader resumes across the restart
-API was back 4212 ms after the crash
+API was back 3630 ms after the crash
 
 stdout | api/crash.test.ts > the API process dying before commit loses the batch whole, and a reader resumes across the restart
 reader: connects=2 resyncs=0 cursor=2
 
- ✓ api/crash.test.ts > the API process dying before commit loses the batch whole, and a reader resumes across the restart 4478ms
+ ✓ api/crash.test.ts > the API process dying before commit loses the batch whole, and a reader resumes across the restart 3969ms
 
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
-
- FAIL  api/stream.test.ts > a slow reader > a reader that never reads again is cut off after the stall timeout
-AssertionError: expected false to be true // Object.is equality
-
-- Expected
-+ Received
-
-- true
-+ false
-
- ❯ api/stream.test.ts:393:18
-    391|     console.log(`stalled stream closed by the server after ${Date.now(…
-    392|     slow.destroy();
-    393|     expect(gone).toBe(true);
-       |                  ^
-    394|   });
-    395| });
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
-
-
- Test Files  1 failed | 4 passed (5)
-      Tests  1 failed | 70 passed (71)
-   Start at  22:51:03
-   Duration  79.21s (tests 100%)
+ Test Files  6 passed (6)
+      Tests  77 passed | 1 skipped (78)
+   Start at  23:22:40
+   Duration  87.59s (tests 100%)
 

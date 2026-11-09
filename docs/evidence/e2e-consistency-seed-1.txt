@@ -1,0 +1,13 @@
+seed 1
+scenario: {"points":2520,"batches":178,"repeats":35,"overlaps":18,"late":49,"conflicts":6,"nonFinite":18}
+at 20%: cut 1 open stream(s) between events
+at 45%: browser network down for 3 s while ingestion continues
+at 75%: next stream chunk cut in half
+late phase: 49 held-back deliveries sent while the browser is offline
+ingest client: {"attempts":320,"retries":83,"replayed":61,"accepted":2235,"duplicates":277,"conflicts":5}
+client network: {"requests":320,"droppedRequests":44,"droppedResponses":39,"delayed":235,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
+browser network: {"requests":18,"droppedRequests":0,"droppedResponses":0,"delayed":0,"streamCuts":3,"streamCutsMidChunk":1,"refusedWhileDown":0}
+page: {"state":"live","cursor":181,"count":2520,"connects":5,"resyncs":0,"gaps":0}
+samples while running: 129, furthest behind 80 batches, saw offline=true, saw catching up=false
+stored: 2520 points in 5 metrics; CSV rows compared: 2520; chart vertices compared: 2502
+RESULT: database = expected truth = API = page CSV = page summary = chart geometry; fresh reload = same
