@@ -91,7 +91,11 @@ describe('an old key after rotation', () => {
     const lateStatus = await status(t.client.sendMetrics(run.id, batchOf(series('late', 0, 1))));
     const statuses = await Promise.all(writes);
     expect(lateStatus).toBe(401);
-    expect(new Set(statuses)).toEqual(new Set([200, 401]));
+    // While the revocation waits for writes in progress, later ones queue
+    // behind it and some are turned away as "project busy" (429) first.
+    expect(statuses).toContain(200);
+    expect(statuses).toContain(401);
+    expect(statuses.every((s) => s === 200 || s === 401 || s === 429)).toBe(true);
     // Every accepted write is stored whole, every refused one left nothing.
     const accepted = statuses.filter((s) => s === 200).length;
     expect((await fresh.getRun(run.id)).points).toBe(accepted * 10);
@@ -148,8 +152,8 @@ describe('revoking a key that is in constant use', () => {
     const acceptedAfter: number[] = [];
     let accepted = 0;
     let refused = 0;
-    // Twelve writers that never pause: there is always a write in progress.
-    const writers = Array.from({ length: 12 }, async (_, w) => {
+    // Eight writers that never pause: there is always a write in progress.
+    const writers = Array.from({ length: 8 }, async (_, w) => {
       for (let i = 0; !stop; i++) {
         const startedAt = Date.now();
         const code = await status(t.client.sendMetrics(run.id, batchOf(series(`w${w}`, i * 5, i * 5 + 5))));

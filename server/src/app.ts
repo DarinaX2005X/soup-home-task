@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { UUID_PATTERN, encodeValue, type MetricsPage, type Run, type WirePoint } from '@simmer/sdk';
 import { authenticate, generateKey, type Auth } from './auth.ts';
@@ -12,6 +12,7 @@ import { parseBatch, storeBatch } from './ingest.ts';
 declare module 'fastify' {
   interface FastifyRequest {
     auth: Auth | null;
+    released: boolean;
   }
   interface FastifyContextConfig {
     public?: boolean;
@@ -80,6 +81,8 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   const app = Fastify({
     bodyLimit: config.bodyLimit,
     genReqId: () => randomUUID(),
+    // The API sits behind nginx, which passes the caller's address on.
+    trustProxy: true,
     // One log line per request (written below) instead of Fastify's two.
     disableRequestLogging: true,
     logger: {
@@ -128,6 +131,31 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     });
   });
 
+  // Fairness between projects. All projects share one database pool, so a
+  // project that sends a flood must run out of its own allowance before it
+  // runs the pool dry for everyone else. Counted per API process.
+  const inFlight = new Map<string, number>();
+  const release = (request: FastifyRequest) => {
+    const projectId = request.auth?.projectId;
+    if (!projectId || request.released) return;
+    request.released = true;
+    const left = (inFlight.get(projectId) ?? 1) - 1;
+    if (left > 0) inFlight.set(projectId, left);
+    else inFlight.delete(projectId);
+  };
+  app.decorateRequest('released', false);
+  app.addHook('onRequest', async (request, reply) => {
+    const projectId = request.auth?.projectId;
+    if (!projectId) return;
+    const now = inFlight.get(projectId) ?? 0;
+    if (now >= config.maxInFlightPerProject) {
+      request.released = true;
+      throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
+    }
+    inFlight.set(projectId, now + 1);
+    reply.raw.once('close', () => release(request));
+  });
+
   // Nothing here may be stored by a browser or a proxy and shown to the next
   // caller of the same URL.
   app.addHook('onSend', async (_request, reply) => {
@@ -142,7 +170,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   app.setErrorHandler((error: any, request, reply) => {
     if (error instanceof HttpError) {
-      if (error.status === 503) reply.header('retry-after', '1');
+      if (error.status === 503 || error.status === 429) reply.header('retry-after', '1');
       reply.status(error.status).send({
         error: { code: error.code, message: error.message, details: error.details },
       });
@@ -177,7 +205,28 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   // Projects and keys
 
+  // What the sign-in screen needs to know before anyone has a key.
+  app.get('/config', { config: { public: true } }, async () => ({
+    signup: config.signupToken ? 'token' : 'open',
+  }));
+
+  const signups = new Map<string, number[]>();
+  const sameSecret = (a: string, b: string) =>
+    timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
+
   app.post('/projects', { config: { public: true } }, async (request, reply) => {
+    if (config.signupToken) {
+      const given = request.headers['x-signup-token'];
+      if (typeof given !== 'string' || !sameSecret(given, config.signupToken)) {
+        throw new HttpError(403, 'signup_closed', 'Creating a project on this server needs an invite code.');
+      }
+    }
+    const hourAgo = Date.now() - 3_600_000;
+    const recent = (signups.get(request.ip) ?? []).filter((at) => at > hourAgo);
+    if (recent.length >= config.signupsPerHour) {
+      throw new HttpError(429, 'too_many_projects', 'Too many projects were created from this address. Try again later.');
+    }
+    signups.set(request.ip, [...recent, Date.now()]);
     const body = (request.body ?? {}) as Record<string, unknown>;
     const name = text(body.name, 'name', 80);
     const projectId = randomUUID();
@@ -450,6 +499,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     if (hub.streamsFor(who.projectId) >= config.maxStreamsPerProject) {
       throw new HttpError(429, 'too_many_streams', 'This project has too many open live streams.');
     }
+    release(request);
     reply.hijack();
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',

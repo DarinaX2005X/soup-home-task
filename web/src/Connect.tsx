@@ -91,6 +91,15 @@ export function Connect({ reason }: { reason: SignedOutReason }) {
   const [busy, setBusy] = useState<'open' | 'create' | null>(null);
   const [error, setError] = useState<{ form: 'open' | 'create'; text: string } | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
+  const [invite, setInvite] = useState('');
+  const [needsInvite, setNeedsInvite] = useState(false);
+
+  useEffect(() => {
+    new Client({ baseUrl: API_BASE }).getConfig().then(
+      (config) => setNeedsInvite(config.signup === 'token'),
+      () => {},
+    );
+  }, []);
 
   const open = async (event: FormEvent) => {
     event.preventDefault();
@@ -124,10 +133,13 @@ export function Connect({ reason }: { reason: SignedOutReason }) {
     setBusy('create');
     setError(null);
     try {
-      const made = await new Client({ baseUrl: API_BASE }).createProject(name.trim());
+      const made = await new Client({ baseUrl: API_BASE }).createProject(name.trim(), invite.trim() || undefined);
       setCreated({ name: made.project.name, secret: made.api_key.secret });
     } catch (e) {
-      const text = e instanceof ApiError && e.status === 422 ? e.message : 'The project could not be created. Try again.';
+      const text =
+        e instanceof ApiError && [403, 422, 429].includes(e.status)
+          ? e.message
+          : 'The project could not be created. Try again.';
       setError({ form: 'create', text });
     } finally {
       setBusy(null);
@@ -207,6 +219,19 @@ export function Connect({ reason }: { reason: SignedOutReason }) {
                 onChange={(e) => setName(e.target.value)}
                 aria-invalid={error?.form === 'create'}
               />
+              {needsInvite && (
+                <>
+                  <label htmlFor="invite">Invite code</label>
+                  <input
+                    id="invite"
+                    name="invite"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={invite}
+                    onChange={(e) => setInvite(e.target.value)}
+                  />
+                </>
+              )}
               {error?.form === 'create' && <p className="field-error">{error.text}</p>}
               <Button type="submit" busy={busy === 'create'}>
                 {busy === 'create' ? 'Creating' : 'Create project and key'}

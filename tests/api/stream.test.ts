@@ -129,8 +129,9 @@ describe('live delivery', () => {
     const run = await newRun();
     const stream = await openStream(t.secret, run.id);
     await Promise.all(
+      // sendBatch retries when the project's allowance of concurrent requests is full.
       Array.from({ length: 30 }, (_, i) =>
-        t.client.sendMetrics(run.id, batchOf(series(`m${i % 3}`, i * 10, i * 10 + 10))),
+        sendBatch(t.client, run.id, batchOf(series(`m${i % 3}`, i * 10, i * 10 + 10))),
       ),
     );
     await stream.waitFor((s) => s.messages.at(-1)?.to === 30, 5000, 'cursor 30');

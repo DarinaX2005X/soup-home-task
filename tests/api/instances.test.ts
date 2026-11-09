@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { Client } from '@simmer/sdk';
+import { Client, sendBatch } from '@simmer/sdk';
 import { API2_URL, API_URL } from '../lib/env.ts';
 import {
   assertChain,
@@ -42,7 +42,7 @@ describe.skipIf(!API2_URL)('two API instances', () => {
     const here = await openStream(t.secret, run.id);
     const there = await openStream(t.secret, run.id, { baseUrl: second });
     await Promise.all(
-      Array.from({ length: 100 }, (_, i) => t.client.sendMetrics(run.id, batchOf(series(`m${i % 4}`, i * 5, i * 5 + 5)))),
+      Array.from({ length: 100 }, (_, i) => sendBatch(t.client, run.id, batchOf(series(`m${i % 4}`, i * 5, i * 5 + 5)))),
     );
     for (const stream of [here, there]) {
       await stream.waitFor((s) => s.messages.at(-1)?.to === 100, 5000, 'cursor 100');
@@ -57,9 +57,9 @@ describe.skipIf(!API2_URL)('two API instances', () => {
     const other = new Client({ baseUrl: second, apiKey: t.secret });
     const stream = await openStream(t.secret, run.id, { baseUrl: second });
     const results = await Promise.all(
-      Array.from({ length: 60 }, (_, i) => (i % 2 ? t.client : other).sendMetrics(run.id, batchOf(series('loss', i * 3, i * 3 + 3)))),
+      Array.from({ length: 60 }, (_, i) => sendBatch(i % 2 ? t.client : other, run.id, batchOf(series('loss', i * 3, i * 3 + 3)))),
     );
-    expect(results.map((r) => r.seq!).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
+    expect(results.map((r) => r.result.seq!).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
     await stream.waitFor((s) => s.messages.at(-1)?.to === 60, 5000, 'cursor 60');
     stream.close();
     expect(assertChain(stream, 0)).toBe(60);

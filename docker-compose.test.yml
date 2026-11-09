@@ -14,6 +14,8 @@ services:
     environment:
       TEST_HOOKS: "1"
       LOG_FILE: /logs/api.log
+      # The tests create hundreds of projects from one address.
+      SIGNUPS_PER_HOUR: "1000000"
     volumes:
       - logs:/logs
 
@@ -27,6 +29,9 @@ services:
       DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
       MIGRATE_DATABASE_URL: postgres://simmer_owner:${OWNER_DB_PASSWORD:-owner-local-only}@db:5432/simmer
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-app-local-only}
+      # This instance is the one with sign-up locked down, for the tests of that.
+      SIGNUP_TOKEN: test-invite-code
+      SIGNUPS_PER_HOUR: "4"
     depends_on:
       api:
         condition: service_healthy

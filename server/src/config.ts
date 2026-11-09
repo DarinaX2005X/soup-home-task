@@ -30,6 +30,15 @@ export const config = {
   bodyLimit: int('BODY_LIMIT_BYTES', 1_048_576),
   /** Requests waiting for a database connection beyond this are refused with 503. */
   maxQueuedForDb: int('MAX_QUEUED_FOR_DB', 400),
+  /**
+   * Requests one project may have in progress at once. Below the pool size on
+   * purpose: one project cannot occupy every database connection.
+   */
+  maxInFlightPerProject: int('MAX_IN_FLIGHT_PER_PROJECT', 12),
+  /** If set, creating a project needs this value in the x-signup-token header. */
+  signupToken: process.env.SIGNUP_TOKEN || undefined,
+  /** Projects one address may create per hour. */
+  signupsPerHour: int('SIGNUPS_PER_HOUR', 30),
   logFile: process.env.LOG_FILE || undefined,
   logLevel: process.env.LOG_LEVEL ?? 'info',
   /** Fault injection and process stats for the test suite. Off unless set to 1. */

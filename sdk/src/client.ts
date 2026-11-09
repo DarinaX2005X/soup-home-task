@@ -74,8 +74,14 @@ export class Client {
     this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   }
 
-  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-    const headers: Record<string, string> = { accept: 'application/json' };
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    signal?: AbortSignal,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<T> {
+    const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
     if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const response = await this.fetchImpl(this.baseUrl + path, {
@@ -91,8 +97,18 @@ export class Client {
     return (await response.json()) as T;
   }
 
-  createProject(name: string) {
-    return this.request<{ project: Project; api_key: NewApiKey }>('POST', '/projects', { name });
+  /** Whether this server lets anyone create a project or asks for an invite code. */
+  getConfig() {
+    return this.request<{ signup: 'open' | 'token' }>('GET', '/config');
+  }
+  createProject(name: string, inviteCode?: string) {
+    return this.request<{ project: Project; api_key: NewApiKey }>(
+      'POST',
+      '/projects',
+      { name },
+      undefined,
+      inviteCode ? { 'x-signup-token': inviteCode } : {},
+    );
   }
   getProject(signal?: AbortSignal) {
     return this.request<Project>('GET', '/project', undefined, signal);

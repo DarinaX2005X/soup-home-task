@@ -286,9 +286,14 @@ describe('nothing is shared through a cache', () => {
   test('a pooled database connection carries no project from the previous request', async () => {
     // Hammer both projects through the same small pool at once. If the project
     // setting leaked from one transaction into the next, lists would mix.
-    const results = await Promise.all(
-      Array.from({ length: 200 }, (_, i) => (i % 2 ? a : b).client.listRuns().then((r) => [i % 2, r.runs] as const)),
-    );
+    const results: (readonly [number, { id: string }[]])[] = [];
+    for (let wave = 0; wave < 20; wave++) {
+      results.push(
+        ...(await Promise.all(
+          Array.from({ length: 16 }, (_, i) => (i % 2 ? a : b).client.listRuns().then((r) => [i % 2, r.runs] as const)),
+        )),
+      );
+    }
     for (const [isA, runs] of results) {
       const ids = runs.map((r) => r.id);
       if (isA) expect(ids).not.toContain(runB.id);
