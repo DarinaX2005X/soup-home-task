@@ -99,6 +99,83 @@ describe('an old key after rotation', () => {
   });
 });
 
+describe('a write that races a revocation', () => {
+  const post = (secret: string, runId: string, body: unknown, fault: string) =>
+    fetch(`${API_URL}/runs/${runId}/metrics`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json', 'x-test-fault': fault },
+      body: JSON.stringify(body),
+    });
+
+  test('a request that passed the key check before the revocation is refused when it reaches the database', async () => {
+    const t = await newTenant('race-late');
+    const run = await t.client.createRun();
+    // The request is accepted at the door, then held for 500 ms before its transaction starts.
+    const held = post(t.secret, run.id, batchOf(series('loss', 0, 10)), 'pause:500');
+    await sleep(150);
+    const rotated = await t.client.rotateKey(t.keyId);
+    const response = await held;
+    expect(response.status).toBe(401);
+    const fresh = new Client({ baseUrl: API_URL, apiKey: rotated.secret });
+    expect((await fresh.getRun(run.id)).points).toBe(0);
+  });
+
+  test('a revocation waits for a write that is already inside its transaction', async () => {
+    const t = await newTenant('race-early');
+    const run = await t.client.createRun();
+    // This write has stored its points and sits 700 ms before commit.
+    const writing = post(t.secret, run.id, batchOf(series('loss', 0, 10)), 'delay:700');
+    await sleep(200);
+    const startedAt = Date.now();
+    const rotated = await t.client.rotateKey(t.keyId);
+    const waited = Date.now() - startedAt;
+    console.log(`rotation waited ${waited} ms for the write in progress`);
+    expect((await writing).status).toBe(200);
+    expect(waited).toBeGreaterThan(300);
+    // So when the rotation answers, nothing from the old key is still on its way in.
+    const fresh = new Client({ baseUrl: API_URL, apiKey: rotated.secret });
+    expect((await fresh.getRun(run.id)).points).toBe(10);
+    expect(await status(t.client.sendMetrics(run.id, batchOf(series('loss', 10, 20))))).toBe(401);
+  });
+});
+
+describe('revoking a key that is in constant use', () => {
+  test('the revocation is not held off by a steady stream of writes', async () => {
+    const t = await newTenant('race-busy');
+    const run = await t.client.createRun();
+    let stop = false;
+    let rotationAnsweredAt = Infinity;
+    const acceptedAfter: number[] = [];
+    let accepted = 0;
+    let refused = 0;
+    // Twelve writers that never pause: there is always a write in progress.
+    const writers = Array.from({ length: 12 }, async (_, w) => {
+      for (let i = 0; !stop; i++) {
+        const startedAt = Date.now();
+        const code = await status(t.client.sendMetrics(run.id, batchOf(series(`w${w}`, i * 5, i * 5 + 5))));
+        if (code === 200) {
+          accepted++;
+          if (startedAt > rotationAnsweredAt) acceptedAfter.push(startedAt - rotationAnsweredAt);
+        } else refused++;
+      }
+    });
+    await sleep(600);
+    const startedAt = Date.now();
+    await t.client.rotateKey(t.keyId);
+    rotationAnsweredAt = Date.now();
+    await sleep(600);
+    stop = true;
+    await Promise.all(writers);
+    console.log(
+      `rotation took ${rotationAnsweredAt - startedAt} ms under constant writes; ${accepted} writes accepted before it, ${refused} refused after`,
+    );
+    expect(rotationAnsweredAt - startedAt).toBeLessThan(500);
+    // No write that started after the rotation answered got in.
+    expect(acceptedAfter).toEqual([]);
+    expect(refused).toBeGreaterThan(0);
+  });
+});
+
 describe('key management', () => {
   test('the only active key cannot be revoked, so a project cannot lock itself out', async () => {
     const t = await newTenant('last-key');

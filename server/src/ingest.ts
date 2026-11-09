@@ -10,8 +10,8 @@ import {
   type BatchResult,
   type Point,
 } from '@simmer/sdk';
-import type { Tx } from './db.ts';
-import { HttpError, invalid, notFound } from './errors.ts';
+import { assertKeyActive, type Tx } from './db.ts';
+import { HttpError, invalid, notFound, unauthorized } from './errors.ts';
 
 export interface ParsedBatch {
   batchId: string;
@@ -77,22 +77,30 @@ export async function storeBatch(
   tx: Tx,
   projectId: string,
   runId: string,
+  keyId: string,
   batch: ParsedBatch,
   hooks: IngestHooks = {},
 ): Promise<BatchResult> {
   // Locks the run row. Batches for one run are stored one after another, which
   // is what makes seq order equal commit order. Other runs are not affected.
   // Row-level security makes another project's run look like no run at all.
-  // The same statement fetches the record of this batch_id, if it was seen.
+  // The same statement fetches the record of this batch_id, if it was seen,
+  // and re-checks the caller's key under the lock the transaction opened with
+  // (see assertKeyActive).
   const run = await tx.query(
-    `select r.last_seq, b.payload_hash, b.result
+    `select r.last_seq, b.payload_hash, b.result,
+       (select count(*) from api_keys k where k.id = $3 and k.revoked_at is null) as key_active
      from runs r left join batches b on b.run_id = r.id and b.batch_id = $2
      where r.id = $1 for update of r`,
-    [runId, batch.batchId],
+    [runId, batch.batchId, keyId],
   );
-  if (run.rowCount === 0) throw notFound();
+  if (run.rowCount === 0) {
+    await assertKeyActive(tx, keyId);
+    throw notFound();
+  }
 
   const stored = run.rows[0];
+  if (Number(stored.key_active) === 0) throw unauthorized();
   if (stored.payload_hash) {
     if (!batch.hash.equals(stored.payload_hash)) {
       throw new HttpError(

@@ -4,7 +4,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { UUID_PATTERN, encodeValue, type MetricsPage, type Run, type WirePoint } from '@simmer/sdk';
 import { authenticate, generateKey, type Auth } from './auth.ts';
 import type { Config } from './config.ts';
-import { withProject, type Db, type Tx } from './db.ts';
+import { assertKeyActive, lockKeyForRevocation, withProject, type Db, type Tx } from './db.ts';
 import { HttpError, invalid, notFound, unauthorized } from './errors.ts';
 import { Hub } from './hub.ts';
 import { parseBatch, storeBatch } from './ingest.ts';
@@ -231,20 +231,37 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const label = text(body.label, 'label', 80, 'New key');
     const key = generateKey();
     const row = await withProject(db, projectId, async (tx) => {
+      await assertKeyActive(tx, keyId);
       const made = await tx.query(
         `insert into api_keys (project_id, key_hash, prefix, label) values ($1, $2, $3, $4)
          returning id, prefix, label, created_at, revoked_at`,
         [projectId, key.hash, key.prefix, label],
       );
       return made.rows[0];
-    });
+    }, keyId);
     request.log.info({ new_key_id: row.id }, 'key created');
     reply.status(201);
     return { ...toKey(row, keyId), secret: key.secret };
   });
 
+  /**
+   * Locks every active key of the project, in id order, and checks that the
+   * caller's own key is still among them. Two revocations therefore run one
+   * after the other, and the second sees what the first did: they cannot each
+   * leave the other's key as "the one that remains", and a key that was just
+   * revoked cannot revoke anything.
+   */
+  async function lockActiveKeys(tx: Tx, callerKeyId: string): Promise<{ id: string; label: string }[]> {
+    const active = await tx.query(
+      'select id, label from api_keys where revoked_at is null order by id for update',
+    );
+    if (!active.rows.some((k) => k.id === callerKeyId)) throw unauthorized();
+    return active.rows;
+  }
+
   /** Revokes inside the caller's transaction and tells every instance to drop its streams. */
   async function revoke(tx: Tx, keyId: string): Promise<void> {
+    await lockKeyForRevocation(tx, keyId);
     const revoked = await tx.query(
       'update api_keys set revoked_at = now() where id = $1 and revoked_at is null returning id',
       [keyId],
@@ -260,16 +277,14 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const targetId = runIdOf(request);
     const key = generateKey();
     const row = await withProject(db, projectId, async (tx) => {
-      const old = await tx.query(
-        'select label from api_keys where id = $1 and revoked_at is null for update',
-        [targetId],
-      );
-      if (old.rowCount === 0) throw notFound();
+      const active = await lockActiveKeys(tx, keyId);
+      const old = active.find((k) => k.id === targetId);
+      if (!old) throw notFound();
       await revoke(tx, targetId);
       const made = await tx.query(
         `insert into api_keys (project_id, key_hash, prefix, label) values ($1, $2, $3, $4)
          returning id, prefix, label, created_at, revoked_at`,
-        [projectId, key.hash, key.prefix, old.rows[0].label],
+        [projectId, key.hash, key.prefix, old.label],
       );
       return made.rows[0];
     });
@@ -280,14 +295,12 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   });
 
   app.delete('/keys/:id', async (request, reply) => {
-    const { projectId } = auth(request);
+    const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
     await withProject(db, projectId, async (tx) => {
-      // Lock the project's active keys so two revocations cannot each see the
-      // other's key as the one that remains.
-      const active = await tx.query('select id from api_keys where revoked_at is null for update');
-      if (!active.rows.some((row) => row.id === targetId)) throw notFound();
-      if (active.rowCount === 1) {
+      const active = await lockActiveKeys(tx, keyId);
+      if (!active.some((k) => k.id === targetId)) throw notFound();
+      if (active.length === 1) {
         throw new HttpError(
           409,
           'last_key',
@@ -303,17 +316,18 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   // Runs
 
   app.post('/runs', async (request, reply) => {
-    const { projectId } = auth(request);
+    const { projectId, keyId } = auth(request);
     const body = (request.body ?? {}) as Record<string, unknown>;
     const id = randomUUID();
     const name = text(body.name, 'name', 120, `run-${id.slice(0, 8)}`);
     const row = await withProject(db, projectId, async (tx) => {
+      await assertKeyActive(tx, keyId);
       const made = await tx.query(
         `insert into runs (id, project_id, name) values ($1, $2, $3) returning ${RUN_COLUMNS}`,
         [id, projectId, name],
       );
       return made.rows[0];
-    });
+    }, keyId);
     reply.status(201);
     return toRun(row);
   });
@@ -340,11 +354,12 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   });
 
   app.post('/runs/:id/finish', async (request) => {
-    const { projectId } = auth(request);
+    const { projectId, keyId } = auth(request);
     const runId = runIdOf(request);
     const body = (request.body ?? {}) as Record<string, unknown>;
     const status = body.status ?? 'finished';
     const row = await withProject(db, projectId, async (tx) => {
+      await assertKeyActive(tx, keyId);
       await assertRun(tx, runId);
       if (status !== 'finished' && status !== 'failed') {
         throw invalid('status must be "finished" or "failed".');
@@ -357,7 +372,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         [runId, status],
       );
       return updated.rows[0];
-    });
+    }, keyId);
     hub.published(runId, true);
     return toRun(row);
   });
@@ -365,7 +380,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   // Metrics
 
   app.post('/runs/:id/metrics', async (request) => {
-    const { projectId } = auth(request);
+    const { projectId, keyId } = auth(request);
     const runId = runIdOf(request);
     let batch;
     try {
@@ -377,10 +392,15 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
       throw error;
     }
     const fault = config.testHooks ? request.headers['x-test-fault'] : undefined;
+    // Test-only: hold the request between the key check and the transaction.
+    if (typeof fault === 'string' && fault.startsWith('pause:')) {
+      await new Promise((resolve) => setTimeout(resolve, Number(fault.slice(6)) || 0));
+    }
     const result = await withProject(db, projectId, (tx) =>
-      storeBatch(tx, projectId, runId, batch, {
+      storeBatch(tx, projectId, runId, keyId, batch, {
         beforeCommit: typeof fault === 'string' ? () => injectFault(fault) : undefined,
       }),
+      keyId,
     );
     // Only now is the batch committed and visible to the streams' reads.
     if (result.seq !== null && !result.replayed) hub.published(runId);

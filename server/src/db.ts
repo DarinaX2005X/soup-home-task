@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { UUID_PATTERN } from '@simmer/sdk';
+import { unauthorized } from './errors.ts';
 import { migrations } from './schema.ts';
 
 export type Db = pg.Pool;
@@ -22,8 +23,11 @@ export async function withProject<T>(
   db: Db,
   projectId: string,
   fn: (tx: Tx) => Promise<T>,
+  /** For writes: the key making the request. See assertKeyActive. */
+  writerKeyId?: string,
 ): Promise<T> {
   if (!UUID_PATTERN.test(projectId)) throw new Error('withProject needs a project id');
+  if (writerKeyId !== undefined && !UUID_PATTERN.test(writerKeyId)) throw new Error('bad key id');
   const tx = await db.connect();
   let broken: Error | undefined;
   // The pool only listens for errors on idle clients. If this connection dies
@@ -36,7 +40,10 @@ export async function withProject<T>(
   try {
     // One round trip instead of two. A multi-statement query cannot take
     // parameters, so the id is checked to be a UUID before it is put in.
-    await tx.query(`begin; select set_config('app.project_id', '${projectId}', true)`);
+    const keyLock = writerKeyId
+      ? `; select pg_advisory_xact_lock_shared(hashtextextended('${writerKeyId}', 0))`
+      : '';
+    await tx.query(`begin; select set_config('app.project_id', '${projectId}', true)${keyLock}`);
     const result = await fn(tx);
     await tx.query('commit');
     return result;
@@ -51,6 +58,28 @@ export async function withProject<T>(
     tx.off('error', onError);
     tx.release(broken);
   }
+}
+
+/**
+ * Makes a write depend on its key still being valid when the write commits.
+ * The key was checked when the request arrived, but a revocation can commit
+ * between that check and the write.
+ *
+ * A write transaction opened with `writerKeyId` holds a shared advisory lock
+ * on its key, and a revocation takes the same lock exclusively. So a key that
+ * was revoked earlier is refused by this check, and a revocation that comes
+ * later waits until the write is finished. Advisory locks queue fairly: a
+ * waiting revocation is not overtaken by new writers. A shared row lock was
+ * tried first and was overtaken by them for as long as traffic lasted.
+ */
+export async function assertKeyActive(tx: Tx, keyId: string): Promise<void> {
+  const key = await tx.query('select 1 from api_keys where id = $1 and revoked_at is null', [keyId]);
+  if (key.rowCount === 0) throw unauthorized();
+}
+
+/** The revoking side of assertKeyActive. Waits for writes in progress with this key. */
+export async function lockKeyForRevocation(tx: Tx, keyId: string): Promise<void> {
+  await tx.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [keyId]);
 }
 
 export async function migrate(ownerUrl: string, appPassword: string): Promise<string[]> {
