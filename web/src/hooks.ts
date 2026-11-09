@@ -66,6 +66,8 @@ export function usePolled<T>(fetcher: (signal: AbortSignal) => Promise<T>, inter
 }
 
 const LATE_VISIBLE_MS = 2200;
+/** A run page hidden for this long gives its connection back to the browser. */
+const HIDDEN_PAUSE_MS = 5000;
 
 export interface LiveRun {
   data: RunData;
@@ -127,13 +129,27 @@ export function useLiveRun(session: Session, runId: string): LiveRun {
     stream.start();
     render();
     const retry = () => !document.hidden && stream.retryNow();
+    // Browsers allow about six connections per site over HTTP/1.1, and every
+    // live page holds one. A background tab lets go of its own after a short
+    // wait and catches up from its cursor when it is looked at again.
+    let pauseTimer: ReturnType<typeof setTimeout> | undefined;
+    const onVisibility = () => {
+      clearTimeout(pauseTimer);
+      if (document.hidden) pauseTimer = setTimeout(() => stream.pause(), HIDDEN_PAUSE_MS);
+      else {
+        stream.resume();
+        stream.retryNow();
+      }
+    };
     window.addEventListener('online', retry);
-    document.addEventListener('visibilitychange', retry);
+    document.addEventListener('visibilitychange', onVisibility);
+    onVisibility();
     return () => {
       stream.stop();
+      clearTimeout(pauseTimer);
       cancelAnimationFrame(scheduled);
       window.removeEventListener('online', retry);
-      document.removeEventListener('visibilitychange', retry);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [session.apiKey, runId]);
 

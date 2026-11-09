@@ -35,6 +35,12 @@ export const config = {
    * purpose: one project cannot occupy every database connection.
    */
   maxInFlightPerProject: int('MAX_IN_FLIGHT_PER_PROJECT', 12),
+  /**
+   * Host name of the reverse proxy whose X-Forwarded-For is believed. Anyone
+   * else's is ignored, so a caller that reaches the API directly cannot pick
+   * the address it is rate-limited under.
+   */
+  trustedProxyHost: process.env.TRUSTED_PROXY_HOST || undefined,
   /** If set, creating a project needs this value in the x-signup-token header. */
   signupToken: process.env.SIGNUP_TOKEN || undefined,
   /** Projects one address may create per hour. */

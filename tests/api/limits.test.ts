@@ -49,6 +49,39 @@ describe('one project cannot starve the others', () => {
     expect((await noisy.client.getRun(run.id)).points).toBe(36);
     expect((await noisy.client.sendMetrics(run.id, batchOf(series('after', 0, 1)))).accepted).toBe(1);
   });
+
+  test('hanging up does not give the allowance back while the work is still running', async () => {
+    const noisy = await newTenant('limit-hangup');
+    const run = await noisy.client.createRun();
+    const slowWrite = (signal?: AbortSignal) =>
+      fetch(`${API_URL}/runs/${run.id}/metrics`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${noisy.secret}`,
+          'content-type': 'application/json',
+          'x-test-fault': 'delay:1200',
+        },
+        body: JSON.stringify(batchOf(series(`m${Math.random().toString(36).slice(2, 8)}`, 0, 2))),
+        signal,
+      }).then(
+        (response) => response.status,
+        () => 0,
+      );
+    // Twelve slow writes fill the allowance. The client then drops every
+    // connection, while the server is still inside all twelve transactions.
+    const controller = new AbortController();
+    const first = Array.from({ length: 12 }, () => slowWrite(controller.signal));
+    await sleep(200);
+    controller.abort();
+    await Promise.all(first);
+    await sleep(100);
+    const second = await Promise.all(Array.from({ length: 12 }, () => slowWrite()));
+    console.log(`after hanging up on 12 writes in progress, 12 more got: ${[...new Set(second)].join(', ')}`);
+    expect(second.every((status) => status === 429)).toBe(true);
+    // Once the abandoned work has finished, the allowance is back.
+    await sleep(1300);
+    expect(await slowWrite()).toBe(200);
+  });
 });
 
 describe.skipIf(!API2_URL)('creating projects on a locked-down instance', () => {
@@ -70,9 +103,14 @@ describe.skipIf(!API2_URL)('creating projects on a locked-down instance', () => 
     expect((await answers[0]!.json()).error.code).toBe('signup_closed');
   });
 
-  test('with the code, one address gets four projects an hour and then waits', async () => {
+  test('with the code, one address gets four projects an hour, whatever address it claims to be', async () => {
     const statuses = [];
-    for (let i = 0; i < 6; i++) statuses.push((await create({ 'x-signup-token': 'test-invite-code' })).status);
+    for (let i = 0; i < 6; i++) {
+      // A different made-up X-Forwarded-For every time. This instance is
+      // reached directly, not through its proxy, so the header is not believed.
+      const claimed = { 'x-signup-token': 'test-invite-code', 'x-forwarded-for': `203.0.113.${i + 1}` };
+      statuses.push((await create(claimed)).status);
+    }
     expect(statuses).toEqual([201, 201, 201, 201, 429, 429]);
   });
 });

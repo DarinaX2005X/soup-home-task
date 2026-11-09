@@ -13,6 +13,8 @@ export type StreamPhase =
   | 'unauthorized'
   /** The run does not exist for this key. Terminal. */
   | 'not_found'
+  /** Deliberately disconnected, for example while the tab is in the background. */
+  | 'paused'
   | 'stopped';
 
 export type StreamLogEntry = { at: number } & (
@@ -22,6 +24,7 @@ export type StreamLogEntry = { at: number } & (
   | { kind: 'gap'; expected: number; got: number }
   | { kind: 'resync'; reason: string }
   | { kind: 'bye'; reason: string }
+  | { kind: 'paused'; cursor: number }
 );
 
 export interface StreamSnapshot {
@@ -70,6 +73,7 @@ export class RunStream {
   private stopped = false;
   private wakeSleep: (() => void) | undefined;
   private catchingUpFrom: number | null = null;
+  private paused = false;
 
   constructor(options: RunStreamOptions) {
     this.options = options;
@@ -105,6 +109,24 @@ export class RunStream {
     this.update({ phase: 'stopped' });
   }
 
+  /**
+   * Lets go of the connection without forgetting anything. A browser gives a
+   * site only a few connections, so a page nobody is looking at should not
+   * hold one. resume() reconnects from the cursor like after any disconnect.
+   */
+  pause(): void {
+    if (this.paused || this.stopped) return;
+    this.paused = true;
+    this.controller?.abort();
+    this.wakeSleep?.();
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.wakeSleep?.();
+  }
+
   /** Skip the backoff, for example when the browser reports it is back online. */
   retryNow(): void {
     this.wakeSleep?.();
@@ -127,9 +149,16 @@ export class RunStream {
     const maxDelay = this.options.maxDelayMs ?? 5_000;
     let delay = minDelay;
     while (!this.stopped) {
+      if (this.paused) {
+        this.update({ phase: 'paused', lostAt: null }, { at: Date.now(), kind: 'paused', cursor: this.data.cursor });
+        await new Promise<void>((resolve) => (this.wakeSleep = resolve));
+        this.wakeSleep = undefined;
+        continue;
+      }
       this.update({ phase: 'connecting' });
       const outcome = await this.connectOnce();
       if (this.stopped) return;
+      if (this.paused) continue;
       if (outcome.terminal) {
         this.update({ phase: outcome.terminal });
         return;

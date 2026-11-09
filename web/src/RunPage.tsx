@@ -12,6 +12,8 @@ type Sync = 'connecting' | 'live' | 'catching_up' | 'offline' | 'not_found';
 function syncOf(s: StreamSnapshot): Sync {
   if (s.phase === 'not_found') return 'not_found';
   if (s.phase === 'open' && s.run) return s.cursor >= s.run.head ? 'live' : 'catching_up';
+  // Paused in a background tab. Nobody is looking, and it reconnects on return.
+  if (s.phase === 'paused') return 'connecting';
   // Before the first connection there is nothing stale on screen yet.
   return s.connects === 0 && s.lostAt === null ? 'connecting' : 'offline';
 }
@@ -73,6 +75,8 @@ function describe(entry: StreamLogEntry): string {
       return `A message skipped from batch ${entry.expected} to ${entry.got}. It was not applied, and the page reconnected from batch ${entry.expected}`;
     case 'resync':
       return `Discarded the local copy and reloaded: ${entry.reason}`;
+    case 'paused':
+      return `Disconnected at batch ${entry.cursor} while this tab was in the background`;
     case 'bye':
       return entry.reason === 'key_revoked' ? 'The server closed the stream because the key was revoked' : 'The server closed the stream and asked to reconnect';
   }

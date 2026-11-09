@@ -1,3 +1,4 @@
+import { lookup } from 'node:dns/promises';
 import { createWriteStream } from 'node:fs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
@@ -12,7 +13,6 @@ import { parseBatch, storeBatch } from './ingest.ts';
 declare module 'fastify' {
   interface FastifyRequest {
     auth: Auth | null;
-    released: boolean;
   }
   interface FastifyContextConfig {
     public?: boolean;
@@ -75,14 +75,32 @@ async function assertRun(tx: Tx, runId: string): Promise<void> {
 }
 
 export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyInstance; hub: Hub }> {
+  const trustedProxies = new Set<string>();
+  if (config.trustedProxyHost) {
+    const host = config.trustedProxyHost;
+    const refresh = () =>
+      lookup(host, { all: true }).then(
+        (found) => {
+          trustedProxies.clear();
+          for (const entry of found) trustedProxies.add(entry.address);
+        },
+        () => {},
+      );
+    await refresh();
+    // Containers get new addresses when they are recreated.
+    setInterval(refresh, 30_000).unref();
+  }
+
   const file = config.logFile ? createWriteStream(config.logFile, { flags: 'a' }) : undefined;
   // A log file that cannot be written must not take the API down with it.
   file?.on('error', (error) => console.error(`log file: ${error.message}`));
   const app = Fastify({
     bodyLimit: config.bodyLimit,
     genReqId: () => randomUUID(),
-    // The API sits behind nginx, which passes the caller's address on.
-    trustProxy: true,
+    // X-Forwarded-For is believed only when the connection comes from the
+    // configured proxy. The API port is also reachable directly, and there
+    // the header is whatever the caller typed.
+    trustProxy: (address: string) => trustedProxies.has(address),
     // One log line per request (written below) instead of Fastify's two.
     disableRequestLogging: true,
     logger: {
@@ -133,28 +151,25 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   // Fairness between projects. All projects share one database pool, so a
   // project that sends a flood must run out of its own allowance before it
-  // runs the pool dry for everyone else. Counted per API process.
+  // runs the pool dry for everyone else. The allowance is counted around the
+  // database work itself, per API process: it is taken when a request asks for
+  // a connection and given back when that work has ended, whatever the client
+  // does with its socket in the meantime.
   const inFlight = new Map<string, number>();
-  const release = (request: FastifyRequest) => {
-    const projectId = request.auth?.projectId;
-    if (!projectId || request.released) return;
-    request.released = true;
-    const left = (inFlight.get(projectId) ?? 1) - 1;
-    if (left > 0) inFlight.set(projectId, left);
-    else inFlight.delete(projectId);
-  };
-  app.decorateRequest('released', false);
-  app.addHook('onRequest', async (request, reply) => {
-    const projectId = request.auth?.projectId;
-    if (!projectId) return;
+  async function forProject<T>(projectId: string, fn: (tx: Tx) => Promise<T>, writerKeyId?: string): Promise<T> {
     const now = inFlight.get(projectId) ?? 0;
     if (now >= config.maxInFlightPerProject) {
-      request.released = true;
       throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
     }
     inFlight.set(projectId, now + 1);
-    reply.raw.once('close', () => release(request));
-  });
+    try {
+      return await withProject(db, projectId, fn, writerKeyId);
+    } finally {
+      const left = (inFlight.get(projectId) ?? 1) - 1;
+      if (left > 0) inFlight.set(projectId, left);
+      else inFlight.delete(projectId);
+    }
+  }
 
   // Nothing here may be stored by a browser or a proxy and shown to the next
   // caller of the same URL.
@@ -222,6 +237,10 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
       }
     }
     const hourAgo = Date.now() - 3_600_000;
+    // Forget addresses with nothing recent, so the table cannot grow for ever.
+    if (signups.size > 10_000) {
+      for (const [ip, times] of signups) if (times.every((at) => at <= hourAgo)) signups.delete(ip);
+    }
     const recent = (signups.get(request.ip) ?? []).filter((at) => at > hourAgo);
     if (recent.length >= config.signupsPerHour) {
       throw new HttpError(429, 'too_many_projects', 'Too many projects were created from this address. Try again later.');
@@ -256,7 +275,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   app.get('/project', async (request) => {
     const { projectId } = auth(request);
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       return (await tx.query('select id, name, created_at from projects')).rows[0];
     });
     if (!row) throw notFound();
@@ -265,7 +284,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   app.get('/keys', async (request) => {
     const { projectId, keyId } = auth(request);
-    const rows = await withProject(db, projectId, async (tx) => {
+    const rows = await forProject(projectId, async (tx) => {
       const found = await tx.query(
         'select id, prefix, label, created_at, revoked_at from api_keys order by created_at desc',
       );
@@ -279,7 +298,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const body = (request.body ?? {}) as Record<string, unknown>;
     const label = text(body.label, 'label', 80, 'New key');
     const key = generateKey();
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       await assertKeyActive(tx, keyId);
       const made = await tx.query(
         `insert into api_keys (project_id, key_hash, prefix, label) values ($1, $2, $3, $4)
@@ -325,7 +344,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
     const key = generateKey();
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       const old = active.find((k) => k.id === targetId);
       if (!old) throw notFound();
@@ -346,7 +365,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   app.delete('/keys/:id', async (request, reply) => {
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
-    await withProject(db, projectId, async (tx) => {
+    await forProject(projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       if (!active.some((k) => k.id === targetId)) throw notFound();
       if (active.length === 1) {
@@ -369,7 +388,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const body = (request.body ?? {}) as Record<string, unknown>;
     const id = randomUUID();
     const name = text(body.name, 'name', 120, `run-${id.slice(0, 8)}`);
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       await assertKeyActive(tx, keyId);
       const made = await tx.query(
         `insert into runs (id, project_id, name) values ($1, $2, $3) returning ${RUN_COLUMNS}`,
@@ -383,7 +402,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
 
   app.get('/runs', async (request) => {
     const { projectId } = auth(request);
-    const rows = await withProject(db, projectId, async (tx) => {
+    const rows = await forProject(projectId, async (tx) => {
       const found = await tx.query(
         `select ${RUN_COLUMNS} from runs order by created_at desc, id limit 200`,
       );
@@ -395,7 +414,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   app.get('/runs/:id', async (request) => {
     const { projectId } = auth(request);
     const runId = runIdOf(request);
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       return (await tx.query(`select ${RUN_COLUMNS} from runs where id = $1`, [runId])).rows[0];
     });
     if (!row) throw notFound();
@@ -407,7 +426,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const runId = runIdOf(request);
     const body = (request.body ?? {}) as Record<string, unknown>;
     const status = body.status ?? 'finished';
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       await assertKeyActive(tx, keyId);
       await assertRun(tx, runId);
       if (status !== 'finished' && status !== 'failed') {
@@ -437,7 +456,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     } catch (error) {
       // Access is decided before validity. Without this, a 422 for a run in
       // another project would confirm that the run exists.
-      await withProject(db, projectId, (tx) => assertRun(tx, runId));
+      await forProject(projectId, (tx) => assertRun(tx, runId));
       throw error;
     }
     const fault = config.testHooks ? request.headers['x-test-fault'] : undefined;
@@ -445,7 +464,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     if (typeof fault === 'string' && fault.startsWith('pause:')) {
       await new Promise((resolve) => setTimeout(resolve, Number(fault.slice(6)) || 0));
     }
-    const result = await withProject(db, projectId, (tx) =>
+    const result = await forProject(projectId, (tx) =>
       storeBatch(tx, projectId, runId, keyId, batch, {
         beforeCommit: typeof fault === 'string' ? () => injectFault(fault) : undefined,
       }),
@@ -460,7 +479,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const { projectId } = auth(request);
     const runId = runIdOf(request);
     const query = request.query as Record<string, string | undefined>;
-    const page = await withProject(db, projectId, async (tx): Promise<MetricsPage> => {
+    const page = await forProject(projectId, async (tx): Promise<MetricsPage> => {
       const run = await tx.query('select last_seq from runs where id = $1', [runId]);
       if (run.rowCount === 0) throw notFound();
       const after = cursorOf(query.after);
@@ -494,12 +513,11 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const runId = runIdOf(request);
     const query = request.query as Record<string, string | undefined>;
     const lastEventId = request.headers['last-event-id'];
-    await withProject(db, who.projectId, (tx) => assertRun(tx, runId));
+    await forProject(who.projectId, (tx) => assertRun(tx, runId));
     const cursor = cursorOf(typeof lastEventId === 'string' ? lastEventId : query.after);
     if (hub.streamsFor(who.projectId) >= config.maxStreamsPerProject) {
       throw new HttpError(429, 'too_many_streams', 'This project has too many open live streams.');
     }
-    release(request);
     reply.hijack();
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
