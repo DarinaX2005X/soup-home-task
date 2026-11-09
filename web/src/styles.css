@@ -930,6 +930,7 @@ a.wordmark:hover svg {
   fill: none;
   stroke: var(--warn);
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
   transform-box: fill-box;
   transform-origin: center;
   animation: late 2.2s var(--ease) forwards;
@@ -941,11 +942,11 @@ a.wordmark:hover svg {
     opacity: 1;
   }
   35% {
-    transform: scale(2.6);
+    transform: scale(1.9);
     opacity: 0.9;
   }
   100% {
-    transform: scale(3.4);
+    transform: scale(2.4);
     opacity: 0;
   }
 }

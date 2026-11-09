@@ -35,7 +35,7 @@ export function formatAgo(from: number, now: number): string {
 }
 
 export function formatDuration(ms: number): string {
-  const seconds = Math.round(ms / 1000);
+  const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) return `${seconds} s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes} min ${seconds % 60} s`;
@@ -58,7 +58,7 @@ export function niceTicks(min: number, max: number, target: number): number[] {
 export function formatTick(value: number): string {
   if (value === 0) return '0';
   const abs = Math.abs(value);
-  if (abs >= 1e6 || abs < 1e-3) return value.toExponential(0).replace('+', '');
+  if (abs >= 1e6 || abs < 1e-3) return Number(value.toPrecision(3)).toExponential().replace('+', '');
   if (abs >= 10_000) return `${Number((value / 1000).toPrecision(3))}K`;
   return String(Number(value.toPrecision(6)));
 }

@@ -1,0 +1,25 @@
+
+Running 4 tests using 1 worker
+
+(node:149) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+seed 20261110
+scenario: {"points":2520,"batches":161,"repeats":36,"overlaps":18,"late":37,"conflicts":6,"nonFinite":22}
+at 20%: cut 1 open stream(s) between events
+at 45%: browser network down for 3 s while ingestion continues
+at 75%: next stream chunk cut in half
+late phase: 37 held-back deliveries sent while the browser is offline
+ingest client: {"attempts":292,"retries":71,"replayed":61,"accepted":2180,"duplicates":247,"conflicts":5}
+client network: {"requests":292,"droppedRequests":37,"droppedResponses":34,"delayed":219,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
+browser network: {"requests":18,"droppedRequests":0,"droppedResponses":0,"delayed":0,"streamCuts":3,"streamCutsMidChunk":1,"refusedWhileDown":0}
+page: {"state":"live","cursor":163,"count":2520,"connects":5,"resyncs":0,"gaps":0}
+samples while running: 101, furthest behind 74 batches, saw offline=true, saw catching up=false
+stored: 2520 points in 5 metrics; CSV rows compared: 2520; chart vertices compared: 2498
+RESULT: database = expected truth = API = page CSV = page summary = chart geometry; fresh reload = same
+  ✓  1 e2e/consistency.spec.ts:47:1 › what the page shows equals what is stored, after disorder, duplicates, late data and lost connections (17.1s)
+  ✓  2 e2e/isolation.spec.ts:14:1 › after switching keys in one tab, nothing of the previous project is left on screen or reachable (1.0s)
+open page signed out 27 ms after the rotation
+  ✓  3 e2e/isolation.spec.ts:56:1 › rotating a key signs out an open live page and clears what it was showing (757ms)
+  ✓  4 e2e/isolation.spec.ts:76:1 › rotating the key a tab is signed in with keeps the tab working and shows the new key once (1.2s)
+
+  4 passed (21.0s)

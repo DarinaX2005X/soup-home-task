@@ -89,9 +89,9 @@ function SyncChip({ sync, snapshot, now, open, onToggle }: { sync: Sync; snapsho
         ? `Catching up, ${plural(behind, 'batch', 'batches')} behind`
         : sync === 'connecting'
           ? 'Connecting'
-          : snapshot.lostAt
+          : snapshot.lostAt && now - snapshot.lostAt >= 1000
             ? `Offline for ${formatDuration(now - snapshot.lostAt)}`
-            : 'Reconnecting';
+            : 'Offline';
   return (
     <button
       className={`sync sync-${sync}`}

@@ -323,11 +323,8 @@ describe('a slow reader', () => {
     return { state, destroy: () => request.destroy() };
   }
 
-  let bigRunId = '';
-
   test('a reader that stops reading costs the server one page, then catches up completely', async () => {
     const run = await newRun();
-    bigRunId = run.id;
     const before = await stats();
     const slow = openPausable(run.id);
     while (!slow.state.res) await sleep(10);
@@ -370,9 +367,17 @@ describe('a slow reader', () => {
   });
 
   test('a reader that never reads again is cut off after the stall timeout', async () => {
-    // The run from the previous test holds 200 000 points, far more than the
-    // kernel will buffer for a socket nobody reads.
-    const run = { id: bigRunId };
+    // The server only notices a reader that has stopped once the kernel's
+    // socket buffers are full, and between two containers those hold several
+    // megabytes. So this run is filled with about 20 MB of points, written
+    // straight into the tables to keep the test short.
+    const run = await newRun();
+    await owner().query(
+      `insert into points (run_id, project_id, key, step, value, seq)
+       select $1, $2, 'k' || (g % 4), g / 4, g * 0.001, g / 1000 + 1 from generate_series(0, 799999) g`,
+      [run.id, t.projectId],
+    );
+    await owner().query('update runs set last_seq = 800, point_count = 800000 where id = $1', [run.id]);
     const slow = openPausable(run.id);
     while (!slow.state.res) await sleep(10);
     const startedAt = Date.now();

@@ -111,13 +111,14 @@ export function useLiveRun(session: Session, runId: string): LiveRun {
       },
       onLate: (points) => {
         const now = Date.now();
-        // During a large catch-up nearly everything is "late". Highlighting
-        // thousands of points would say nothing, so only small arrivals count.
-        if (points.length > 40) return;
+        // During a catch-up nearly everything is "late". Rings on hundreds of
+        // points would say nothing, so only small arrivals are marked, and
+        // only the most recent few per metric stay on screen.
+        if (points.length > 24) return;
         for (const point of points) {
           const list = (late.get(point.key) ?? []).filter((m) => now - m.at < LATE_VISIBLE_MS);
           list.push({ step: point.step, at: now });
-          late.set(point.key, list.slice(-60));
+          late.set(point.key, list.slice(-6));
         }
         setTimeout(render, LATE_VISIBLE_MS + 50);
       },
