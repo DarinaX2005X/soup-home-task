@@ -17,6 +17,8 @@ FROM node:22-alpine AS api
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/server/dist/server.js ./server.js
+# Only used when LOG_FILE points here (the test stack mounts a volume on it).
+RUN mkdir /logs && chown node:node /logs
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

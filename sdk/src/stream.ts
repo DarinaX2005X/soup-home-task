@@ -183,8 +183,8 @@ export class RunStream {
           authorization: `Bearer ${this.options.apiKey}`,
           'last-event-id': String(this.data.cursor),
         },
-        cache: 'no-store',
         signal: controller.signal,
+        ...({ cache: 'no-store' } as object),
       });
       if (response.status === 401) return { reason: 'unauthorized', receivedData, terminal: 'unauthorized' };
       if (response.status === 404) return { reason: 'not found', receivedData, terminal: 'not_found' };

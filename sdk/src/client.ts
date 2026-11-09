@@ -82,8 +82,9 @@ export class Client {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      cache: 'no-store',
       signal,
+      // Node's fetch types do not know `cache`, browsers honour it.
+      ...({ cache: 'no-store' } as object),
     });
     if (!response.ok) throw await readError(response);
     if (response.status === 204) return undefined as T;

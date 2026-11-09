@@ -75,6 +75,8 @@ async function assertRun(tx: Tx, runId: string): Promise<void> {
 
 export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyInstance; hub: Hub }> {
   const file = config.logFile ? createWriteStream(config.logFile, { flags: 'a' }) : undefined;
+  // A log file that cannot be written must not take the API down with it.
+  file?.on('error', (error) => console.error(`log file: ${error.message}`));
   const app = Fastify({
     bodyLimit: config.bodyLimit,
     genReqId: () => randomUUID(),
