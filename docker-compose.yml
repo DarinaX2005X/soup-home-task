@@ -1,0 +1,53 @@
+# docker compose up --build
+# Web app:  http://localhost:8080
+# API:      http://localhost:8080/api  (also directly on http://localhost:3000)
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: simmer_owner
+      POSTGRES_PASSWORD: ${OWNER_DB_PASSWORD:-owner-local-only}
+      POSTGRES_DB: simmer
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simmer_owner -d simmer"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      # The API serves requests as simmer_app, which owns no tables and is
+      # subject to row-level security. The owner URL is used once, to migrate.
+      DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
+      MIGRATE_DATABASE_URL: postgres://simmer_owner:${OWNER_DB_PASSWORD:-owner-local-only}@db:5432/simmer
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-app-local-only}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  dbdata:

@@ -1,0 +1,40 @@
+# Test stack. Adds fault injection and process stats to the API, a readable
+# API log, a database port for the tests to read the truth from, and the test
+# runner itself.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm tests
+
+services:
+  db:
+    ports:
+      - "${DB_PORT:-54329}:5432"
+
+  api:
+    environment:
+      TEST_HOOKS: "1"
+      LOG_FILE: /logs/api.log
+    volumes:
+      - logs:/logs
+
+  tests:
+    build:
+      context: .
+      target: tests
+    profiles: ["test"]
+    environment:
+      WEB_URL: http://web
+      API_URL: http://api:3000
+      OWNER_DATABASE_URL: postgres://simmer_owner:${OWNER_DB_PASSWORD:-owner-local-only}@db:5432/simmer
+      APP_DATABASE_URL: postgres://simmer_app:${APP_DB_PASSWORD:-app-local-only}@db:5432/simmer
+      API_LOG_FILE: /logs/api.log
+      EVIDENCE_DIR: /evidence
+    volumes:
+      - logs:/logs:ro
+      - ./docs/evidence:/evidence
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  logs:

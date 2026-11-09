@@ -1,0 +1,23 @@
+{
+  "name": "@simmer/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api": "vitest run --config vitest.config.ts",
+    "e2e": "playwright test",
+    "load": "tsx load/load.ts"
+  },
+  "dependencies": {
+    "@simmer/sdk": "*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
