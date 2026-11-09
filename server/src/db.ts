@@ -24,6 +24,13 @@ export async function withProject<T>(
 ): Promise<T> {
   const tx = await db.connect();
   let broken: Error | undefined;
+  // The pool only listens for errors on idle clients. If this connection dies
+  // while we hold it and no query is in flight, pg emits 'error' on the
+  // client, and an unhandled 'error' takes the whole process down.
+  const onError = (error: Error) => {
+    broken = error;
+  };
+  tx.on('error', onError);
   try {
     await tx.query('begin');
     await tx.query("select set_config('app.project_id', $1, true)", [projectId]);
@@ -38,6 +45,7 @@ export async function withProject<T>(
     }
     throw error;
   } finally {
+    tx.off('error', onError);
     tx.release(broken);
   }
 }
