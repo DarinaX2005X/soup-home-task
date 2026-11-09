@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Simmer, a mini experiment tracker">
+  <style>
+    .name { font: 700 68px 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif; fill: #1d1a16; letter-spacing: -2px; }
+    .line1 { font: 500 25px 'Figtree', 'Segoe UI', system-ui, sans-serif; fill: #57514a; }
+    .tick { font: 500 14px 'Figtree', 'Segoe UI', system-ui, sans-serif; fill: #857e73; }
+  </style>
+  <rect width="1200" height="300" rx="28" fill="#f6f1e7"/>
+  <rect x="640" y="36" width="524" height="228" rx="18" fill="#fffdf8"/>
+
+  <g transform="translate(64 62)">
+    <rect width="64" height="64" rx="16" fill="#1d1a16"/>
+    <path d="M12 34h40a20 20 0 0 1-40 0z" fill="#f6f1e7"/>
+    <path d="M18 24l8-6 8 4 12-12" fill="none" stroke="#3fb8a9" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text class="name" x="146" y="116">Simmer</text>
+  <rect x="62" y="166" width="318" height="40" rx="10" fill="#f9df86"/>
+  <text class="line1" x="74" y="194">A mini experiment tracker</text>
+  <text class="line1" x="64" y="240">that shows only what is stored,</text>
+  <text class="line1" x="64" y="272">and only to its owner</text>
+
+  <!-- A loss curve whose middle batch arrived late: the ring marks it. -->
+  <g>
+    <line x1="676" x2="1132" y1="92" y2="92" stroke="#e2d9c8"/>
+    <line x1="676" x2="1132" y1="150" y2="150" stroke="#e2d9c8"/>
+    <line x1="676" x2="1132" y1="208" y2="208" stroke="#e2d9c8"/>
+    <line x1="676" x2="1132" y1="234" y2="234" stroke="#857e73"/>
+    <text class="tick" x="676" y="254">0</text>
+    <text class="tick" x="892" y="254">150</text>
+    <text class="tick" x="1108" y="254">300</text>
+    <path fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+      d="M676,70 L700,82 L724,98 L748,108 L772,124 L796,131 L820,146 L844,152 L868,163 L892,168 L916,178 L940,181 L964,190 L988,192 L1012,199 L1036,200 L1060,206 L1084,206 L1108,211 L1132,212"/>
+    <g fill="none" stroke="#a8540a" stroke-width="3">
+      <circle cx="868" cy="163" r="11"/>
+      <circle cx="892" cy="168" r="11"/>
+      <circle cx="916" cy="178" r="11"/>
+    </g>
+    <circle cx="1132" cy="212" r="6" fill="#0f766e" stroke="#fffdf8" stroke-width="3"/>
+  </g>
+</svg>

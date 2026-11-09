@@ -1,0 +1,19 @@
+# Load: 50 runs x 10 points/s for 60 s
+batch every 1000 ms (10 points per request, 50 requests/s in total)
+2 live viewers per run through http://web/api, 5 projects, ingest to http://api:3000
+started 2026-11-09T22:56:02.974Z
+
+requests sent      3000 in 60.1 s (50/s)
+requests failed    0
+points planned     30000
+points acknowledged 30000
+points stored      30000
+ingest latency     p50 8 ms, p95 14 ms, p99 24 ms, max 107 ms (n=3000)   (from scheduled send time to answer)
+max in flight      4 requests
+delivery lag       p50 9 ms, p95 16 ms, p99 27 ms, max 121 ms (n=60000)   (from scheduled send time to a viewer holding the point)
+viewers            100, complete 100, incomplete 0, broken 0
+tail drained in    0.0 s after the last send
+api process        rss peak 118 MB, db pool waiters peak 0, stream buffer peak 0 KB
+invariants         all hold
+
+RESULT: nothing lost, nothing duplicated, every viewer complete

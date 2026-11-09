@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="How a batch travels from a training client to a live page">
+  <style>
+    text { font-family: 'Figtree', 'Segoe UI', system-ui, sans-serif; fill: #1d1a16; }
+    .h { font-weight: 700; font-size: 19px; }
+    .b { font-size: 15px; fill: #57514a; }
+    .s { font-size: 14px; fill: #57514a; }
+    .k { font-weight: 700; font-size: 14px; }
+    .box { fill: #fffdf8; stroke: #1d1a16; stroke-width: 1.5; }
+    .db { fill: #d9efe9; stroke: #0f766e; stroke-width: 1.5; }
+    .write { stroke: #1d1a16; stroke-width: 2; fill: none; }
+    .read { stroke: #0f766e; stroke-width: 2; fill: none; }
+    .hint { stroke: #a8540a; stroke-width: 2; fill: none; stroke-dasharray: 2 6; stroke-linecap: round; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10z" fill="#1d1a16"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10z" fill="#0f766e"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10z" fill="#a8540a"/></marker>
+  </defs>
+  <rect width="1200" height="640" rx="24" fill="#f6f1e7"/>
+
+  <!-- Write path, top row, left to right -->
+  <rect class="box" x="40" y="48" width="290" height="188" rx="14"/>
+  <text class="h" x="60" y="82">Training client</text>
+  <text class="b" x="60" y="110">Buffers points into a batch and</text>
+  <text class="b" x="60" y="130">gives it a batch_id.</text>
+  <text class="b" x="60" y="160">No answer in time? Sends the same</text>
+  <text class="b" x="60" y="180">batch again with the same id,</text>
+  <text class="b" x="60" y="200">backing off between attempts.</text>
+
+  <rect class="box" x="440" y="48" width="320" height="188" rx="14"/>
+  <text class="h" x="460" y="82">API</text>
+  <text class="b" x="460" y="110">1. Key hash to project, on every request.</text>
+  <text class="b" x="460" y="132">2. Open a transaction bound to that</text>
+  <text class="b" x="476" y="152">project (row-level security).</text>
+  <text class="b" x="460" y="174">3. Store the batch, all or nothing.</text>
+  <text class="b" x="460" y="196">4. NOTIFY run:seq inside the same</text>
+  <text class="b" x="476" y="216">transaction.</text>
+
+  <rect class="db" x="870" y="48" width="290" height="376" rx="14"/>
+  <text class="h" x="890" y="82">PostgreSQL</text>
+  <text class="k" x="890" y="116">runs</text>
+  <text class="s" x="890" y="136">last_seq is bumped under the row</text>
+  <text class="s" x="890" y="154">lock, held until commit. So seq</text>
+  <text class="s" x="890" y="172">order is commit order.</text>
+  <text class="k" x="890" y="206">points (key, step, value, seq)</text>
+  <text class="s" x="890" y="226">One row per (run, key, step), never</text>
+  <text class="s" x="890" y="244">changed. This table is the event log:</text>
+  <text class="s" x="890" y="262">a stream reads "seq greater than n".</text>
+  <text class="k" x="890" y="296">batches (run, batch_id, hash, answer)</text>
+  <text class="s" x="890" y="316">A repeated batch gets the stored</text>
+  <text class="s" x="890" y="334">answer back and writes nothing.</text>
+  <text class="k" x="890" y="368">Every table</text>
+  <text class="s" x="890" y="388">Forced row-level security. The API's</text>
+  <text class="s" x="890" y="406">role cannot update or delete points.</text>
+
+  <path class="write" marker-end="url(#a)" d="M330,120 H436"/>
+  <text class="s" x="342" y="108">POST /runs/</text>
+  <text class="s" x="342" y="144">{id}/metrics</text>
+  <path class="write" marker-end="url(#a)" d="M760,120 H866"/>
+  <text class="s" x="776" y="108">one</text>
+  <text class="s" x="776" y="144">transaction</text>
+
+  <!-- Read path, bottom row, right to left -->
+  <rect class="box" x="440" y="388" width="320" height="212" rx="14"/>
+  <text class="h" x="460" y="422">Stream hub, inside the API</text>
+  <text class="b" x="460" y="450">One reader per open page, each with</text>
+  <text class="b" x="460" y="470">its own cursor and no queue.</text>
+  <text class="b" x="460" y="498">Woken by NOTIFY, it reads the points</text>
+  <text class="b" x="460" y="518">after its cursor and writes them at the</text>
+  <text class="b" x="460" y="538">pace the socket drains.</text>
+  <text class="b" x="460" y="566">Every 5 s it re-reads the run and</text>
+  <text class="b" x="460" y="586">re-checks the key, notified or not.</text>
+
+  <rect class="box" x="40" y="388" width="290" height="212" rx="14"/>
+  <text class="h" x="60" y="422">Run page</text>
+  <text class="b" x="60" y="450">Keeps the last seq it applied.</text>
+  <text class="b" x="60" y="478">Applies a message only if it continues</text>
+  <text class="b" x="60" y="498">from that seq. A gap means reconnect</text>
+  <text class="b" x="60" y="518">from the cursor, a repeat is dropped.</text>
+  <text class="b" x="60" y="546">When its seq equals the server's, it</text>
+  <text class="b" x="60" y="566">compares point counts. A mismatch</text>
+  <text class="b" x="60" y="586">means reload, and the page says so.</text>
+
+  <path class="hint" marker-end="url(#o)" d="M870,330 C820,330 800,360 764,400"/>
+  <text class="s" x="716" y="322" fill="#a8540a">NOTIFY: "look again"</text>
+  <path class="read" marker-end="url(#g)" d="M870,410 C830,440 800,470 764,480"/>
+  <text class="s" x="776" y="520">points after</text>
+  <text class="s" x="776" y="538">the cursor</text>
+  <path class="read" marker-end="url(#g)" d="M440,494 H334"/>
+  <text class="s" x="346" y="482">SSE: points</text>
+  <text class="s" x="346" y="518">from, to</text>
+  <path class="write" marker-end="url(#a)" d="M330,560 H436"/>
+  <text class="s" x="338" y="584">Last-Event-ID</text>
+</svg>
