@@ -41,7 +41,7 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test run --rm tests
 ```
 
-Output is printed and also written to `docs/evidence/`. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such. Over HTTP/1.1 a browser opens at most six connections to one site. Background tabs give theirs back, and over HTTP/2 there is no limit, but seven run pages visible at once over plain HTTP still cannot all connect, and that test keeps the fact on record.
+Output is printed and also written to `docs/evidence/`. The second API instance allows four new projects an hour, and one test checks exactly that, so restart it (`docker compose ... restart api2`) before running the suite twice within the hour. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such. Over HTTP/1.1 a browser opens at most six connections to one site. Background tabs give theirs back, and over HTTP/2 there is no limit, but seven run pages visible at once over plain HTTP still cannot all connect, and that test keeps the fact on record.
 
 Load test (50 runs, 10 points per second each, two live viewers per run, 60 seconds) and the timing measurement:
 

@@ -167,14 +167,16 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     projectId: string,
     fn: (tx: Tx) => Promise<T>,
     writerKeyId?: string,
-    lane: 'general' | 'revocation' = 'general',
+    /** Set for key management: the key making the request. */
+    keyLane?: string,
   ): Promise<T> {
-    // Revoking and rotating have a small allowance of their own. A leaked key
-    // that keeps the project at its general allowance must not be able to
-    // stop the project from revoking it, and the revocation lane must not be
-    // a way around the general one either.
-    const slot = lane === 'general' ? projectId : `${projectId}:revocation`;
-    const limit = lane === 'general' ? config.maxInFlightPerProject : 2;
+    // Listing, revoking and rotating keys have a small allowance of their
+    // own, counted per calling key. Responding to a leaked key means reading
+    // the key list and revoking, at the moment that key keeps the project at
+    // its general allowance. And because the lane belongs to the caller, the
+    // leaked key cannot fill it for the others either.
+    const slot = keyLane ? `${projectId}:keys:${keyLane}` : projectId;
+    const limit = keyLane ? 2 : config.maxInFlightPerProject;
     const now = inFlight.get(slot) ?? 0;
     if (now >= limit) {
       throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
@@ -307,7 +309,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         'select id, prefix, label, created_at, revoked_at from api_keys order by created_at desc',
       );
       return found.rows;
-    });
+    }, undefined, keyId);
     return { keys: rows.map((row) => toKey(row, keyId)) };
   });
 
@@ -377,7 +379,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         [projectId, key.hash, key.prefix, old.label],
       );
       return made.rows[0];
-    }, undefined, 'revocation');
+    }, undefined, keyId);
     request.log.info({ revoked_key_id: targetId, new_key_id: row.id }, 'key rotated');
     reply.status(201);
     // If the caller rotated its own key, the new one is now the current one.
@@ -398,7 +400,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         );
       }
       await revoke(tx, targetId);
-    }, undefined, 'revocation');
+    }, undefined, keyId);
     request.log.info({ revoked_key_id: targetId }, 'key revoked');
     reply.status(204);
   });

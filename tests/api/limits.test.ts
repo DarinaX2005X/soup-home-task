@@ -107,7 +107,7 @@ describe('key management under a flood', () => {
     expect(await slow()).toBe(401);
   });
 
-  test('the revocation allowance is not a side door: listing and creating keys count as ordinary requests', async () => {
+  test('with the allowance full, the key list can still be read, and creating keys cannot be used as a side door', async () => {
     const t = await newTenant('limit-keys');
     const run = await t.client.createRun();
     const flood = Array.from({ length: 12 }, () =>
@@ -123,8 +123,46 @@ describe('key management under a flood', () => {
       fetch(`${API_URL}/keys`, { headers }).then((r) => r.status),
       fetch(`${API_URL}/keys`, { method: 'POST', headers, body: '{}' }).then((r) => r.status),
     ]);
-    expect(statuses).toEqual([429, 429]);
+    expect(statuses).toEqual([200, 429]);
     await Promise.all(flood);
+  });
+
+  test('one key filling its key-management allowance does not block another key from revoking it', async () => {
+    const t = await newTenant('limit-lanes');
+    const leaked = await t.client.createKey('leaked');
+    const victim = await t.client.createKey('victim');
+    const run = await t.client.createRun();
+    const as = (secret: string, method: string, path: string, fault?: string, body?: unknown) =>
+      fetch(API_URL + path, {
+        method,
+        headers: {
+          authorization: `Bearer ${secret}`,
+          ...(body ? { 'content-type': 'application/json' } : {}),
+          ...(fault ? { 'x-test-fault': fault } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      }).then((r) => r.status);
+    // A slow write with the victim key is in progress, so revoking that key has to wait for it.
+    const slowWrite = as(victim.secret, 'POST', `/runs/${run.id}/metrics`, 'delay:1500', batchOf(series('m', 0, 2)));
+    await sleep(200);
+    // The leaked key starts two revocations of it. Both wait, and fill the leaked key's own lane.
+    const stuck = [as(leaked.secret, 'DELETE', `/keys/${victim.id}`), as(leaked.secret, 'DELETE', `/keys/${victim.id}`)];
+    await sleep(200);
+    expect(await as(leaked.secret, 'GET', '/keys')).toBe(429);
+    // The owner's key has a lane of its own: it reads the list at once, and
+    // its revocation of the leaked key gets through. Revocations run one
+    // after another, so it waits for the one already in progress.
+    expect(await as(t.secret, 'GET', '/keys')).toBe(200);
+    expect(await as(t.secret, 'DELETE', `/keys/${leaked.id}`)).toBe(204);
+    expect(await slowWrite).toBe(200);
+    // The leaked key was still valid when its first revocation ran, so that
+    // one succeeded: any key of a project may revoke another, and this design
+    // does not prevent it. The second found the victim already revoked.
+    expect((await Promise.all(stuck)).sort()).toEqual([204, 404]);
+    // From here on the leaked key is dead.
+    expect(await as(leaked.secret, 'GET', '/keys')).toBe(401);
+    expect(await as(leaked.secret, 'DELETE', `/keys/${t.keyId}`)).toBe(401);
+    expect(await as(t.secret, 'GET', '/runs')).toBe(200);
   });
 
   test('a project cannot pile up keys without end', async () => {
