@@ -41,6 +41,7 @@ export const config = {
    * the address it is rate-limited under.
    */
   trustedProxyHost: process.env.TRUSTED_PROXY_HOST || undefined,
+  maxActiveKeys: int('MAX_ACTIVE_KEYS', 20),
   /** If set, creating a project needs this value in the x-signup-token header. */
   signupToken: process.env.SIGNUP_TOKEN || undefined,
   /** Projects one address may create per hour. */

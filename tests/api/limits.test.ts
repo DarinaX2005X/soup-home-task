@@ -84,6 +84,67 @@ describe('one project cannot starve the others', () => {
   });
 });
 
+describe('key management under a flood', () => {
+  test('a project at its allowance can still revoke the key that is flooding it', async () => {
+    const t = await newTenant('limit-revoke');
+    const admin = await t.client.createKey('admin');
+    const run = await t.client.createRun();
+    const slow = () =>
+      fetch(`${API_URL}/runs/${run.id}/metrics`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${t.secret}`, 'content-type': 'application/json', 'x-test-fault': 'delay:1500' },
+        body: JSON.stringify(batchOf(series(`m${Math.random().toString(36).slice(2, 8)}`, 0, 2))),
+      }).then((r) => r.status);
+    const flood = Array.from({ length: 30 }, slow);
+    await sleep(200);
+    const call = (method: string, path: string) =>
+      fetch(API_URL + path, { method, headers: { authorization: `Bearer ${admin.secret}` } }).then((r) => r.status);
+    // The general allowance is full: an ordinary request is turned away.
+    expect(await call('GET', '/runs')).toBe(429);
+    // Revocation has its own. It waits for the writes in progress, then answers.
+    expect(await call('DELETE', `/keys/${t.keyId}`)).toBe(204);
+    await Promise.all(flood);
+    expect(await slow()).toBe(401);
+  });
+
+  test('the revocation allowance is not a side door: listing and creating keys count as ordinary requests', async () => {
+    const t = await newTenant('limit-keys');
+    const run = await t.client.createRun();
+    const flood = Array.from({ length: 12 }, () =>
+      fetch(`${API_URL}/runs/${run.id}/metrics`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${t.secret}`, 'content-type': 'application/json', 'x-test-fault': 'delay:800' },
+        body: JSON.stringify(batchOf(series(`m${Math.random().toString(36).slice(2, 8)}`, 0, 2))),
+      }),
+    );
+    await sleep(200);
+    const headers = { authorization: `Bearer ${t.secret}`, 'content-type': 'application/json' };
+    const statuses = await Promise.all([
+      fetch(`${API_URL}/keys`, { headers }).then((r) => r.status),
+      fetch(`${API_URL}/keys`, { method: 'POST', headers, body: '{}' }).then((r) => r.status),
+    ]);
+    expect(statuses).toEqual([429, 429]);
+    await Promise.all(flood);
+  });
+
+  test('a project cannot pile up keys without end', async () => {
+    const t = await newTenant('limit-count');
+    const statuses = [];
+    for (let i = 0; i < 21; i++) {
+      statuses.push(
+        await fetch(`${API_URL}/keys`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${t.secret}`, 'content-type': 'application/json' },
+          body: '{}',
+        }).then((r) => r.status),
+      );
+    }
+    // One key came with the project, so 19 more fit.
+    expect(statuses.filter((s) => s === 201)).toHaveLength(19);
+    expect(statuses.slice(19)).toEqual([409, 409]);
+  });
+});
+
 describe.skipIf(!API2_URL)('creating projects on a locked-down instance', () => {
   const create = (headers: Record<string, string> = {}) =>
     fetch(`${API2_URL}/projects`, {

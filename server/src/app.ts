@@ -163,18 +163,29 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   // a connection and given back when that work has ended, whatever the client
   // does with its socket in the meantime.
   const inFlight = new Map<string, number>();
-  async function forProject<T>(projectId: string, fn: (tx: Tx) => Promise<T>, writerKeyId?: string): Promise<T> {
-    const now = inFlight.get(projectId) ?? 0;
-    if (now >= config.maxInFlightPerProject) {
+  async function forProject<T>(
+    projectId: string,
+    fn: (tx: Tx) => Promise<T>,
+    writerKeyId?: string,
+    lane: 'general' | 'revocation' = 'general',
+  ): Promise<T> {
+    // Revoking and rotating have a small allowance of their own. A leaked key
+    // that keeps the project at its general allowance must not be able to
+    // stop the project from revoking it, and the revocation lane must not be
+    // a way around the general one either.
+    const slot = lane === 'general' ? projectId : `${projectId}:revocation`;
+    const limit = lane === 'general' ? config.maxInFlightPerProject : 2;
+    const now = inFlight.get(slot) ?? 0;
+    if (now >= limit) {
       throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
     }
-    inFlight.set(projectId, now + 1);
+    inFlight.set(slot, now + 1);
     try {
       return await withProject(db, projectId, fn, writerKeyId);
     } finally {
-      const left = (inFlight.get(projectId) ?? 1) - 1;
-      if (left > 0) inFlight.set(projectId, left);
-      else inFlight.delete(projectId);
+      const left = (inFlight.get(slot) ?? 1) - 1;
+      if (left > 0) inFlight.set(slot, left);
+      else inFlight.delete(slot);
     }
   }
 
@@ -289,12 +300,9 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     return { id: row.id, name: row.name, created_at: row.created_at.toISOString() };
   });
 
-  // Key management does not count against the project's allowance. Revoking a
-  // leaked key has to work exactly when that key is being used to flood the
-  // project, which is when the allowance is full.
   app.get('/keys', async (request) => {
     const { projectId, keyId } = auth(request);
-    const rows = await withProject(db, projectId, async (tx) => {
+    const rows = await forProject(projectId, async (tx) => {
       const found = await tx.query(
         'select id, prefix, label, created_at, revoked_at from api_keys order by created_at desc',
       );
@@ -308,8 +316,12 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const body = (request.body ?? {}) as Record<string, unknown>;
     const label = text(body.label, 'label', 80, 'New key');
     const key = generateKey();
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       await assertKeyActive(tx, keyId);
+      const active = await tx.query('select count(*) from api_keys where revoked_at is null');
+      if (Number(active.rows[0].count) >= config.maxActiveKeys) {
+        throw new HttpError(409, 'too_many_keys', `A project can have ${config.maxActiveKeys} active keys. Revoke one first.`);
+      }
       const made = await tx.query(
         `insert into api_keys (project_id, key_hash, prefix, label) values ($1, $2, $3, $4)
          returning id, prefix, label, created_at, revoked_at`,
@@ -354,7 +366,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
     const key = generateKey();
-    const row = await withProject(db, projectId, async (tx) => {
+    const row = await forProject(projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       const old = active.find((k) => k.id === targetId);
       if (!old) throw notFound();
@@ -365,7 +377,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         [projectId, key.hash, key.prefix, old.label],
       );
       return made.rows[0];
-    });
+    }, undefined, 'revocation');
     request.log.info({ revoked_key_id: targetId, new_key_id: row.id }, 'key rotated');
     reply.status(201);
     // If the caller rotated its own key, the new one is now the current one.
@@ -375,7 +387,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   app.delete('/keys/:id', async (request, reply) => {
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
-    await withProject(db, projectId, async (tx) => {
+    await forProject(projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       if (!active.some((k) => k.id === targetId)) throw notFound();
       if (active.length === 1) {
@@ -386,7 +398,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
         );
       }
       await revoke(tx, targetId);
-    });
+    }, undefined, 'revocation');
     request.log.info({ revoked_key_id: targetId }, 'key revoked');
     reply.status(204);
   });
