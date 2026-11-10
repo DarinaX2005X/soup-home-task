@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { WEB_URL } from '../lib/env.ts';
+import { TLS_URL, WEB_URL } from '../lib/env.ts';
 import { batchOf, closeOwner, newTenant, series, type Tenant } from '../lib/helpers.ts';
 
 test.afterAll(closeOwner);
@@ -11,11 +11,11 @@ test.afterAll(closeOwner);
 const shareKey = (context: BrowserContext, t: Tenant) =>
   context.addInitScript((key) => sessionStorage.setItem('simmer.key', key), t.secret);
 
-async function openRunPages(context: BrowserContext, runId: string, count: number): Promise<Page[]> {
+async function openRunPages(context: BrowserContext, runId: string, count: number, site = WEB_URL): Promise<Page[]> {
   const pages = [];
   for (let i = 0; i < count; i++) {
     const page = await context.newPage();
-    void page.goto(`${WEB_URL}/runs/${runId}`, { waitUntil: 'commit' }).catch(() => {});
+    void page.goto(`${site}/runs/${runId}`, { waitUntil: 'commit' }).catch(() => {});
     pages.push(page);
   }
   return pages;
@@ -81,4 +81,24 @@ test('eight run pages visible at the same time all go live', async ({ context })
   for (const page of pages) live.push(await goesLive(page));
   console.log(`run pages that went live, in opening order: ${live.map((ok) => (ok ? 'yes' : 'NO')).join(' ')}`);
   expect(live.filter(Boolean).length).toBe(8);
+});
+
+test('over HTTP/2 eight run pages visible at the same time all go live', async ({ browser }) => {
+  test.skip(!TLS_URL, 'needs the optional HTTPS front (docker-compose.tls.yml)');
+  const t = await newTenant('windows-h2');
+  const run = await t.client.createRun('windows-h2-run');
+  await t.client.sendMetrics(run.id, batchOf(series('loss', 0, 10)));
+  // The certificate comes from Caddy's local authority, which no browser knows.
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  await shareKey(context, t);
+  const pages = await openRunPages(context, run.id, 8, TLS_URL);
+  const live: boolean[] = [];
+  for (const page of pages) live.push(await goesLive(page, 10_000));
+  const protocol = await pages[0]!.evaluate(
+    () => (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).nextHopProtocol,
+  );
+  console.log(`over ${protocol}, run pages that went live: ${live.map((ok) => (ok ? 'yes' : 'NO')).join(' ')}`);
+  expect(protocol).toBe('h2');
+  expect(live.filter(Boolean).length).toBe(8);
+  await context.close();
 });

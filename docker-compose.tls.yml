@@ -1,0 +1,20 @@
+# Optional: the same site over HTTPS and HTTP/2 on https://localhost:8443
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up --build
+#
+# Two things change. API keys no longer cross the network in clear. And HTTP/2
+# carries every request of a browser over one connection, so the limit of six
+# live run pages per browser is gone.
+#
+# Behind this proxy nginx sees one caller address, Caddy's, so the hourly cap
+# on new projects counts everyone together.
+
+services:
+  tls:
+    image: caddy:2-alpine
+    volumes:
+      - ./tls/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${TLS_PORT:-8443}:8443"
+    depends_on:
+      - web

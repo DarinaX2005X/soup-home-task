@@ -1,0 +1,16 @@
+# HTTPS and HTTP/2 in front of the site, with a certificate from Caddy's own
+# local authority. Browsers will warn about it: it is for trying the site over
+# TLS on a laptop, not a substitute for a real certificate.
+{
+	auto_https disable_redirects
+}
+
+:8443 {
+	tls internal {
+		on_demand
+	}
+	reverse_proxy web:80 {
+		# Pass stream events through as they come.
+		flush_interval -1
+	}
+}
