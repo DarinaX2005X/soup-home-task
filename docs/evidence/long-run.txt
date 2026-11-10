@@ -1,8 +1,13 @@
 # Opening a run with 864,000 points (10 points/s for 24 hours)
-first points after   18 ms
-complete after       1.3 s
+first points after   22 ms
+complete after       1.5 s
 transferred          32.6 MB in 173 messages (uncompressed)
 points applied       864,000
-reader heap growth   about 50 MB (Node, not a browser)
+reader heap growth   about 45 MB (Node, not a browser)
 
-Every open page of such a run pays this on first load, and again in full after a reload.
+That is the cost of reading every point. The page now starts from the overview instead:
+
+overview answered    4.4 s
+transferred          0.40 MB (uncompressed)
+points to draw       15,000 of 864,000
+continues from       cursor 86400 on the stream

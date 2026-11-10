@@ -1,7 +1,7 @@
 
-Running 5 tests using 1 worker
+Running 8 tests using 1 worker
 
-(node:161) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:192) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 seed 20261110
 scenario: {"points":2520,"batches":161,"repeats":36,"overlaps":18,"late":37,"conflicts":6,"nonFinite":22}
@@ -9,19 +9,26 @@ at 20%: cut 1 open stream(s) between events
 at 45%: browser network down for 3 s while ingestion continues
 at 75%: next stream chunk cut in half
 late phase: 37 held-back deliveries sent while the browser is offline
-ingest client: {"attempts":290,"retries":69,"replayed":57,"accepted":2214,"duplicates":303,"conflicts":5}
-client network: {"requests":290,"droppedRequests":39,"droppedResponses":30,"delayed":219,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
-browser network: {"requests":18,"droppedRequests":0,"droppedResponses":0,"delayed":0,"streamCuts":3,"streamCutsMidChunk":1,"refusedWhileDown":0}
+ingest client: {"attempts":268,"retries":47,"replayed":44,"accepted":2446,"duplicates":279,"conflicts":6}
+client network: {"requests":268,"droppedRequests":31,"droppedResponses":16,"delayed":220,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
+browser network: {"requests":21,"droppedRequests":0,"droppedResponses":0,"delayed":0,"streamCuts":3,"streamCutsMidChunk":1,"refusedWhileDown":0}
 page: {"state":"live","cursor":164,"count":2520,"connects":5,"resyncs":0,"gaps":0}
-samples while running: 107, furthest behind 75 batches, saw offline=true, saw catching up=false
+samples while running: 104, furthest behind 75 batches, saw offline=true, saw catching up=false
 stored: 2520 points in 5 metrics; CSV rows compared: 2520; chart vertices compared: 2498
 RESULT: database = expected truth = API = page CSV = page summary = chart geometry; fresh reload = same
-  ✓  1 e2e/consistency.spec.ts:47:1 › what the page shows equals what is stored, after disorder, duplicates, late data and lost connections (17.7s)
-  ✓  2 e2e/isolation.spec.ts:14:1 › after switching keys in one tab, nothing of the previous project is left on screen or reachable (1.0s)
+  ✓  1 e2e/consistency.spec.ts:47:1 › what the page shows equals what is stored, after disorder, duplicates, late data and lost connections (17.1s)
+  ✓  2 e2e/isolation.spec.ts:14:1 › after switching keys in one tab, nothing of the previous project is left on screen or reachable (1.2s)
 open page signed out 24 ms after the rotation
-  ✓  3 e2e/isolation.spec.ts:56:1 › rotating a key signs out an open live page and clears what it was showing (743ms)
+  ✓  3 e2e/isolation.spec.ts:56:1 › rotating a key signs out an open live page and clears what it was showing (768ms)
   ✓  4 e2e/isolation.spec.ts:76:1 › rotating the key a tab is signed in with keeps the tab working and shows the new key once (1.2s)
+seventh and eighth run page went live: true, true
+  ✓  5 e2e/limits.spec.ts:37:1 › background tabs give their connection back, so more than six run pages can be open (13.1s)
 run pages that went live, in opening order: yes yes yes yes yes yes NO NO
-  ✘  5 e2e/limits.spec.ts:13:1 › eight run pages open at once in one browser all go live (13.0s)
+  ✘  6 e2e/limits.spec.ts:73:1 › eight run pages visible at the same time all go live (12.7s)
+over h2, run pages that went live: yes yes yes yes yes yes yes yes
+  ✓  7 e2e/limits.spec.ts:86:1 › over HTTP/2 eight run pages visible at the same time all go live (800ms)
+page of a 200000 point run was live 1728 ms after the click; overview 326 KB
+exported 200021 rows, equal to the table
+  ✓  8 e2e/long-run.spec.ts:12:1 › a long run opens from a thinned history, stays exact in its figures, and exports every point (7.5s)
 
-  5 passed (34.6s)
+  8 passed (55.4s)

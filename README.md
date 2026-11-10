@@ -19,11 +19,19 @@ Open http://localhost:8080, create a project, and press **Send a sample run**. T
 
 The API is also on http://localhost:3000, so the path from the task works as written: `POST http://localhost:3000/runs/{id}/metrics`. Ports can be moved with `WEB_PORT` and `API_PORT`.
 
+To try it over HTTPS and HTTP/2 on https://localhost:8443 (the certificate is self-issued, so the browser will warn):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up --build
+```
+
+Settings worth knowing, all environment variables of the `api` service: `SIGNUP_TOKEN` makes creating a project require an invite code, `SIGNUPS_PER_HOUR` caps new projects per address (30), `MAX_IN_FLIGHT_PER_PROJECT` caps the requests one project may have in progress (12).
+
 ![The run page after the consistency test](docs/evidence/e2e-final.png)
 
 ## Run the tests
 
-The tests need a second compose file. It turns on fault injection in the API, exposes the database to the tests, starts a second API instance on the same database, and adds the test runner (API tests, then browser tests in Chromium).
+The tests need a second compose file. It turns on fault injection in the API, exposes the database to the tests, starts a second API instance on the same database and the HTTPS front, and adds the test runner (unit and API tests, then browser tests in Chromium).
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
@@ -33,7 +41,7 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test run --rm tests
 ```
 
-Output is printed and also written to `docs/evidence/`. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such: it documents that a browser opens at most six connections to one site over HTTP/1.1, so a seventh open run page cannot connect.
+Output is printed and also written to `docs/evidence/`. The consistency test is seeded. To repeat it with another seed, add `-e SEED=7` after `run --rm`. One browser test is expected to fail and is reported as such. Over HTTP/1.1 a browser opens at most six connections to one site. Background tabs give theirs back, and over HTTP/2 there is no limit, but seven run pages visible at once over plain HTTP still cannot all connect, and that test keeps the fact on record.
 
 Load test (50 runs, 10 points per second each, two live viewers per run, 60 seconds) and the timing measurement:
 
@@ -57,6 +65,8 @@ Three decisions carry most of the weight.
 
 **The points table is the event log.** Each point stores the `seq` that introduced it. The first load of a page, a reconnect after 30 seconds offline and normal live delivery are the same query, "points of this run after seq n", with a different n. There is no snapshot that could disagree with the stream.
 
+**A long run opens from an overview.** Above 50 000 points the page does not read every point. It asks for exact figures per metric plus the lowest and highest point of each slice of the step range, and continues on the stream from the overview's cursor. A day at ten points a second is 864 000 points: 33 MB read point by point, about half a megabyte this way. Export CSV still downloads every point.
+
 **The database enforces the tenant boundary.** Every query runs in a transaction bound to one project, row-level security is forced on every table, and the API connects as a role that owns nothing and cannot update or delete a stored point. A handler that forgets a `WHERE` returns nothing from another project.
 
 ## API
@@ -70,6 +80,7 @@ All requests except creating a project carry `Authorization: Bearer sk_…`.
 | `POST /runs` `{name}`, `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/finish` | Runs |
 | `POST /runs/{id}/metrics` | Stores a batch: `{batch_id, points: [{key, step, value}]}`, up to 1000 points |
 | `GET /runs/{id}/metrics?after=` | Stored points after a cursor, as JSON pages |
+| `GET /runs/{id}/overview` | Exact figures and a thinned line per metric, as of one cursor |
 | `GET /runs/{id}/events` | The live stream (SSE). Resume with `Last-Event-ID` or `?after=` |
 
 The answer to a batch says what happened to it:
@@ -87,7 +98,9 @@ The answer to a batch says what happened to it:
 | `sdk/` | Wire protocol, the ingest client with retries, the stream client, and the reducer that turns stream messages into a run's state. The web page and the tests share it |
 | `server/` | Fastify API. `ingest.ts` stores a batch, `hub.ts` serves streams, `schema.ts` holds the tables and policies, `db.ts` binds a transaction to a project |
 | `web/` | React app: connect, runs list, live run page, API keys. Charts are hand-written SVG |
-| `tests/api/` | Ingestion, streams, isolation, key rotation, crash recovery |
+| `tests/unit/` | Chart thinning, number formatting, the stream reducer |
+| `tests/api/` | Ingestion, streams, overview, isolation, limits, key rotation, two instances, crash recovery |
 | `tests/e2e/` | Browser tests behind a fault-injecting proxy |
 | `tests/load/` | Load test and timing measurement |
 | `tests/lib/chaos.ts` | The proxy that drops requests, drops answers, delays, and cuts streams |
+| `docker-compose.tls.yml`, `tls/` | Optional HTTPS and HTTP/2 front |

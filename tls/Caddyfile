@@ -5,12 +5,15 @@
 	auto_https disable_redirects
 }
 
-:8443 {
-	tls internal {
-		on_demand
-	}
+# Certificates are issued for these names only. "tls" is this service's name
+# inside the compose network, where the tests reach it.
+localhost:8443, 127.0.0.1:8443, tls:8443 {
+	tls internal
 	reverse_proxy web:80 {
 		# Pass stream events through as they come.
 		flush_interval -1
+		# The caller's address, as this proxy saw it. Whatever the caller put
+		# in X-Forwarded-For itself is dropped.
+		header_up X-Forwarded-For {remote_host}
 	}
 }

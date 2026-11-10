@@ -1,0 +1,19 @@
+# Load: 400 runs x 10 points/s for 60 s
+batch every 1000 ms (10 points per request, 400 requests/s in total)
+1 live viewers per run through http://web/api, 5 projects, ingest to http://api:3000
+6 generator processes, started 2026-11-09T23:20:16.876Z
+
+requests            24000 sent, 877 failed {"overloaded":877}
+points              240000 planned, 231230 acknowledged, 231230 stored
+ingest latency      p50 182 ms, p95 514 ms, p99 790 ms, max 1072 ms (n=23123)
+                    measured from the moment a batch was due to the answer
+delivery lag        p50 255 ms, p95 753 ms, p99 1127 ms, max 1545 ms (n=231230)
+                    measured from the moment a batch was due to a viewer holding its points
+viewers             400: 400 complete, 0 incomplete, 0 broken
+requests in flight  peak 40 in one generator
+generator clock     at most 9 ms late (large means the generator, not the system, was the limit)
+api process         rss peak 132 MB, db pool waiters peak 407, stream buffer peak 0 KB
+whole run           60.2 s for 60 s of traffic
+invariants          all hold
+
+RESULT: FAILED, see the lines above

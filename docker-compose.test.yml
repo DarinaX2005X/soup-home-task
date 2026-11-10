@@ -42,6 +42,13 @@ services:
       file: docker-compose.tls.yml
       service: tls
 
+  web:
+    volumes:
+      - ./tls/realip.conf:/etc/nginx/conf.d/realip.conf:ro
+    depends_on:
+      tls:
+        condition: service_started
+
   tests:
     build:
       context: .
@@ -63,8 +70,6 @@ services:
       - ./docs/evidence:/evidence
     depends_on:
       web:
-        condition: service_started
-      tls:
         condition: service_started
 
 volumes:

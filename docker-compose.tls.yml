@@ -6,8 +6,8 @@
 # carries every request of a browser over one connection, so the limit of six
 # live run pages per browser is gone.
 #
-# Behind this proxy nginx sees one caller address, Caddy's, so the hourly cap
-# on new projects counts everyone together.
+# The port is bound to this machine only. The certificate is self-issued, and
+# this file is for trying TLS locally, not for exposing the site.
 
 services:
   tls:
@@ -15,6 +15,13 @@ services:
     volumes:
       - ./tls/Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "${TLS_PORT:-8443}:8443"
+      - "127.0.0.1:${TLS_PORT:-8443}:8443"
+
+  web:
+    volumes:
+      # Lets nginx see the real caller behind the TLS proxy, so per-address
+      # limits keep counting people and not the proxy.
+      - ./tls/realip.conf:/etc/nginx/conf.d/realip.conf:ro
     depends_on:
-      - web
+      tls:
+        condition: service_started

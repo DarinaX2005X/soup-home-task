@@ -1,6 +1,6 @@
 # Design
 
-Written before the code and left as it was. The implementation departs from it in one place: `NOTIFY` is sent after the write transaction, not inside it, because inside it every commit in the database waited on one lock.
+Written before the code and left as it was. The implementation departs from it in two places. `NOTIFY` is sent after the write transaction, not inside it, because inside it every commit in the database waited on one lock. And a run above 50 000 points opens from a server-side overview instead of from `seq 0`: the catch-up path below is unchanged, it just starts from the overview's cursor.
 
 ## Data and the two orders
 

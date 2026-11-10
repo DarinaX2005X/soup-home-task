@@ -289,9 +289,12 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     return { id: row.id, name: row.name, created_at: row.created_at.toISOString() };
   });
 
+  // Key management does not count against the project's allowance. Revoking a
+  // leaked key has to work exactly when that key is being used to flood the
+  // project, which is when the allowance is full.
   app.get('/keys', async (request) => {
     const { projectId, keyId } = auth(request);
-    const rows = await forProject(projectId, async (tx) => {
+    const rows = await withProject(db, projectId, async (tx) => {
       const found = await tx.query(
         'select id, prefix, label, created_at, revoked_at from api_keys order by created_at desc',
       );
@@ -305,7 +308,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const body = (request.body ?? {}) as Record<string, unknown>;
     const label = text(body.label, 'label', 80, 'New key');
     const key = generateKey();
-    const row = await forProject(projectId, async (tx) => {
+    const row = await withProject(db, projectId, async (tx) => {
       await assertKeyActive(tx, keyId);
       const made = await tx.query(
         `insert into api_keys (project_id, key_hash, prefix, label) values ($1, $2, $3, $4)
@@ -351,7 +354,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
     const key = generateKey();
-    const row = await forProject(projectId, async (tx) => {
+    const row = await withProject(db, projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       const old = active.find((k) => k.id === targetId);
       if (!old) throw notFound();
@@ -372,7 +375,7 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   app.delete('/keys/:id', async (request, reply) => {
     const { projectId, keyId } = auth(request);
     const targetId = runIdOf(request);
-    await forProject(projectId, async (tx) => {
+    await withProject(db, projectId, async (tx) => {
       const active = await lockActiveKeys(tx, keyId);
       if (!active.some((k) => k.id === targetId)) throw notFound();
       if (active.length === 1) {
