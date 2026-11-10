@@ -2,7 +2,14 @@ import { lookup } from 'node:dns/promises';
 import { createWriteStream } from 'node:fs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
-import { UUID_PATTERN, encodeValue, type MetricsPage, type Run, type WirePoint } from '@simmer/sdk';
+import {
+  UUID_PATTERN,
+  encodeValue,
+  type MetricsPage,
+  type Overview,
+  type Run,
+  type WirePoint,
+} from '@simmer/sdk';
 import { authenticate, generateKey, type Auth } from './auth.ts';
 import type { Config } from './config.ts';
 import { assertKeyActive, lockKeyForRevocation, withProject, type Db, type Tx } from './db.ts';
@@ -506,6 +513,69 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
       };
     });
     return page;
+  });
+
+  // A run as of one cursor, at a size that does not grow with the run: exact
+  // figures per metric, and for drawing, the lowest and the highest point in
+  // each slice of the step range. It is one statement, so the cursor, the
+  // count and the points all come from the same snapshot, and a page can
+  // continue from `head` on the stream without a seam.
+  app.get('/runs/:id/overview', async (request) => {
+    const { projectId } = auth(request);
+    const runId = runIdOf(request);
+    const query = request.query as Record<string, string | undefined>;
+    const buckets = Math.min(Math.max(cursorOf(query.buckets) || 1500, 100), 4000);
+    const row = await forProject(projectId, async (tx) => {
+      const found = await tx.query(
+        `with p as (
+           select key, step, value,
+                  (value <> 'NaN'::float8 and value <> 'Infinity'::float8 and value <> '-Infinity'::float8) as finite
+           from points where run_id = $1
+         ),
+         stats as (
+           select key, count(*) as n, min(step) as s0, max(step) as s1,
+                  min(value) filter (where finite) as lo, max(value) filter (where finite) as hi,
+                  count(*) filter (where not finite) as non_finite
+           from p group by key
+         ),
+         last as (
+           select distinct on (key) key, step as last_step, value::text as last_value
+           from p order by key, step desc
+         ),
+         sliced as (
+           select p.key, p.step, p.value,
+                  width_bucket(p.step::float8, s.s0::float8, s.s1::float8 + 1, $2) as slice
+           from p join stats s using (key) where p.finite
+         ),
+         lows as (select distinct on (key, slice) key, step, value from sliced order by key, slice, value asc, step),
+         highs as (select distinct on (key, slice) key, step, value from sliced order by key, slice, value desc, step),
+         picked as (select key, step, value from lows union select key, step, value from highs),
+         lines as (select key, json_agg(json_build_array(step, value) order by step) as points from picked group by key)
+         select r.last_seq, r.point_count,
+           coalesce((
+             select json_agg(json_build_object(
+               'key', s.key, 'count', s.n, 'lo', s.lo, 'hi', s.hi, 'non_finite', s.non_finite,
+               'last_step', l.last_step, 'last_value', l.last_value,
+               'points', coalesce(li.points, '[]'::json)) order by s.key)
+             from stats s join last l using (key) left join lines li using (key)
+           ), '[]'::json) as metrics
+         from runs r where r.id = $1`,
+        [runId, buckets],
+      );
+      return found.rows[0];
+    });
+    if (!row) throw notFound();
+    const overview: Overview = {
+      head: Number(row.last_seq),
+      points: Number(row.point_count),
+      buckets,
+      metrics: (row.metrics as any[]).map((m) => ({
+        ...m,
+        // Postgres writes a float as text here. Finite ones become numbers again.
+        last_value: ['NaN', 'Infinity', '-Infinity'].includes(m.last_value) ? m.last_value : Number(m.last_value),
+      })),
+    };
+    return overview;
   });
 
   app.get('/runs/:id/events', async (request, reply) => {

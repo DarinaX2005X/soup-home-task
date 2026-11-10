@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, type Run, type RunData, type StreamLogEntry, type StreamSnapshot } from '@simmer/sdk';
+import {
+  ApiError,
+  decodeValue,
+  type Run,
+  type RunData,
+  type StreamLogEntry,
+  type StreamSnapshot,
+} from '@simmer/sdk';
 import { Chart } from './Chart.tsx';
 import { formatClock, formatCount, formatDuration, formatValue, plural } from './format.ts';
 import { useLiveRun, useNow } from './hooks.ts';
@@ -29,6 +36,21 @@ interface MetricSummary {
 }
 
 function summarize(data: RunData): MetricSummary[] {
+  // With a thinned history the points on the page cannot give exact figures.
+  // They come from the server's overview and are updated by every new point.
+  if (data.stats) {
+    return [...data.stats.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([key, s]) => ({
+        key,
+        count: s.count,
+        lastStep: s.lastStep,
+        lastValue: s.lastValue,
+        min: s.lo,
+        max: s.hi,
+        nonFinite: s.nonFinite,
+      }));
+  }
   const out: MetricSummary[] = [];
   for (const key of [...data.series.keys()].sort()) {
     const { steps, values } = data.series.get(key)!;
@@ -55,10 +77,26 @@ function summarize(data: RunData): MetricSummary[] {
   return out;
 }
 
+const csvLine = (key: string, step: number, value: number) => `${key},${step},${value}`;
+
 function csvOf(data: RunData): string {
   const lines = ['key,step,value'];
-  for (const [key, step, value] of data.points()) lines.push(`${key},${step},${value}`);
+  for (const [key, step, value] of data.points()) lines.push(csvLine(key, step, value));
   return lines.join('\n') + '\n';
+}
+
+/** Every stored point, read from the API page by page. Used when the page itself holds a thinned history. */
+async function csvFromServer(session: Session, runId: string, onProgress: (points: number) => void): Promise<string> {
+  const rows: [string, number, number][] = [];
+  for (let after = 0; ; ) {
+    const page = await session.client.getMetrics(runId, after, 20_000);
+    for (const [key, step, value] of page.points) rows.push([key, step, decodeValue(value)!]);
+    onProgress(rows.length);
+    after = page.to;
+    if (!page.has_more) break;
+  }
+  rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
+  return ['key,step,value', ...rows.map((r) => csvLine(...r))].join('\n') + '\n';
 }
 
 function describe(entry: StreamLogEntry): string {
@@ -105,6 +143,7 @@ function SyncChip({ sync, snapshot, now, open, onToggle }: { sync: Sync; snapsho
       data-state={sync}
       data-cursor={snapshot.cursor}
       data-count={snapshot.count}
+      data-thinned={snapshot.thinned ? 'yes' : 'no'}
       data-connects={snapshot.connects}
       data-resyncs={snapshot.resyncs}
       data-gaps={snapshot.gaps}
@@ -177,8 +216,23 @@ export function RunPage({ session, runId }: { session: Session; runId: string })
   const summary = useMemo(() => summarize(data), [data, snapshot.version]);
   const onHover = useCallback((step: number | null) => setHoverStep(step), []);
 
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([csvOf(data)], { type: 'text/csv' }));
+  const [exporting, setExporting] = useState<number | null>(null);
+  const [exportFailed, setExportFailed] = useState(false);
+  const download = async () => {
+    let csv: string;
+    if (data.thinned) {
+      setExporting(0);
+      setExportFailed(false);
+      try {
+        csv = await csvFromServer(session, runId, setExporting);
+      } catch (error) {
+        if (!handleAuthError(error)) setExportFailed(true);
+        return;
+      } finally {
+        setExporting(null);
+      }
+    } else csv = csvOf(data);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = `${run?.name ?? 'run'}-${runId.slice(0, 8)}.csv`;
@@ -222,8 +276,8 @@ export function RunPage({ session, runId }: { session: Session; runId: string })
         </div>
         <div className="row">
           <SyncChip sync={sync} snapshot={snapshot} now={now} open={showConnection} onToggle={() => setShowConnection((v) => !v)} />
-          <Button onClick={download} disabled={snapshot.count === 0} data-testid="export">
-            Export CSV
+          <Button onClick={download} disabled={snapshot.count === 0} busy={exporting !== null} data-testid="export">
+            {exporting !== null ? `Reading ${formatCount(exporting)} points` : 'Export CSV'}
           </Button>
         </div>
       </header>
@@ -235,6 +289,19 @@ export function RunPage({ session, runId }: { session: Session; runId: string })
           The connection to the server is lost
           {snapshot.lostAt ? ` since ${formatClock(snapshot.lostAt)}` : ''}. The charts show what had arrived by then.
           Batches that are stored in the meantime will appear when the connection returns.
+        </Notice>
+      )}
+      {exportFailed && (
+        <Notice tone="error">The export could not be read from the server. Nothing was downloaded. Try again.</Notice>
+      )}
+      {data.thinned && (
+        <Notice tone="info">
+          <span data-testid="thinned">
+            This run is long, so its history is drawn from {formatCount(data.thinned.shown)} of the{' '}
+            {formatCount(data.thinned.total)} points stored when the page opened: the lowest and the highest value in
+            each slice of every metric, so peaks stay visible. Points that arrived since are all shown. The figures in
+            the table are exact, and Export CSV downloads every point.
+          </span>
         </Notice>
       )}
       {conflicts > 0 && (

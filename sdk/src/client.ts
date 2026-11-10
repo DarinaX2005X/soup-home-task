@@ -3,6 +3,7 @@ import type {
   BatchRequest,
   BatchResult,
   MetricsPage,
+  Overview,
   Run,
   RunStatus,
 } from './protocol.ts';
@@ -142,6 +143,9 @@ export class Client {
 
   sendMetrics(runId: string, batch: BatchRequest, signal?: AbortSignal) {
     return this.request<BatchResult>('POST', `/runs/${runId}/metrics`, batch, signal);
+  }
+  getOverview(runId: string, buckets?: number, signal?: AbortSignal) {
+    return this.request<Overview>('GET', `/runs/${runId}/overview${buckets ? `?buckets=${buckets}` : ''}`, undefined, signal);
   }
   getMetrics(runId: string, after = 0, limit?: number) {
     const query = `?after=${after}${limit ? `&limit=${limit}` : ''}`;

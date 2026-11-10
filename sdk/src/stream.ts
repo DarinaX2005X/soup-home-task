@@ -33,6 +33,8 @@ export interface StreamSnapshot {
   run: RunStateMessage | null;
   cursor: number;
   count: number;
+  /** True when the view started from an overview and holds a thinned history. */
+  thinned: boolean;
   /** Bumped every time the applied points change. */
   version: number;
   connects: number;
@@ -52,6 +54,12 @@ export interface RunStreamOptions {
   fetch?: typeof fetch;
   onChange?: (snapshot: StreamSnapshot) => void;
   onLate?: (points: LatePoint[]) => void;
+  /**
+   * Called before the first connection, and again whenever the view had to be
+   * thrown away. It may fill `data` from an overview so that a long run does
+   * not have to be read from its first batch.
+   */
+  prepare?: (data: RunData) => Promise<void>;
   /** No bytes for this long means the connection is dead even if TCP has not noticed. */
   silenceMs?: number;
   minDelayMs?: number;
@@ -74,6 +82,7 @@ export class RunStream {
   private wakeSleep: (() => void) | undefined;
   private catchingUpFrom: number | null = null;
   private paused = false;
+  private needsPrepare = true;
 
   constructor(options: RunStreamOptions) {
     this.options = options;
@@ -83,6 +92,7 @@ export class RunStream {
       run: null,
       cursor: this.data.cursor,
       count: this.data.count,
+      thinned: false,
       version: 0,
       connects: 0,
       gaps: 0,
@@ -139,6 +149,7 @@ export class RunStream {
       ...patch,
       cursor: this.data.cursor,
       count: this.data.count,
+      thinned: this.data.thinned !== null,
       log,
     };
     this.options.onChange?.(this.state);
@@ -156,7 +167,7 @@ export class RunStream {
         continue;
       }
       this.update({ phase: 'connecting' });
-      const outcome = await this.connectOnce();
+      const outcome = await this.prepareThenConnect();
       if (this.stopped) return;
       if (this.paused) continue;
       if (outcome.terminal) {
@@ -181,6 +192,22 @@ export class RunStream {
       });
       this.wakeSleep = undefined;
     }
+  }
+
+  private async prepareThenConnect(): ReturnType<RunStream['connectOnce']> {
+    if (this.needsPrepare && this.options.prepare) {
+      try {
+        await this.options.prepare(this.data);
+        this.needsPrepare = false;
+        this.update({ version: this.state.version + 1 });
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 401) return { reason: 'unauthorized', receivedData: false, terminal: 'unauthorized' };
+        if (status === 404) return { reason: 'not found', receivedData: false, terminal: 'not_found' };
+        return { reason: error instanceof Error ? error.message : 'could not load the run', receivedData: false };
+      }
+    }
+    return this.connectOnce();
   }
 
   private async connectOnce(): Promise<{
@@ -284,6 +311,7 @@ export class RunStream {
             ? `cursor ${this.data.cursor} is ahead of the server at ${run.head}`
             : `${this.data.count} points here, ${run.points} stored`;
         this.data.reset();
+        this.needsPrepare = true;
         this.update(
           { run, resyncs: this.state.resyncs + 1, version: this.state.version + 1, lastEventAt: now },
           { at: now, kind: 'resync', reason },
@@ -296,12 +324,12 @@ export class RunStream {
     }
     if (event.event === 'reset') {
       this.data.reset();
-      this.catchingUpFrom = 0;
+      this.needsPrepare = true;
       this.update(
         { resyncs: this.state.resyncs + 1, version: this.state.version + 1, lastEventAt: now },
         { at: now, kind: 'resync', reason: 'the server asked to start over' },
       );
-      return 'continue';
+      return 'reconnect';
     }
     if (event.event === 'bye') {
       const bye = JSON.parse(event.data) as ByeMessage;

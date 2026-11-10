@@ -66,6 +66,12 @@ export function usePolled<T>(fetcher: (signal: AbortSignal) => Promise<T>, inter
 }
 
 const LATE_VISIBLE_MS = 2200;
+/**
+ * Above this many points a page starts from the server's overview of the run
+ * instead of reading every point: a day at ten points a second is 864 000
+ * points and 33 MB. Below it, the page holds every point exactly.
+ */
+export const OVERVIEW_ABOVE_POINTS = 50_000;
 /** A run page hidden for this long gives its connection back to the browser. */
 const HIDDEN_PAUSE_MS = 5000;
 
@@ -107,6 +113,10 @@ export function useLiveRun(session: Session, runId: string): LiveRun {
       apiKey: session.apiKey,
       runId,
       data: new RunData(),
+      prepare: async (data) => {
+        const run = await session.client.getRun(runId);
+        if (run.points > OVERVIEW_ABOVE_POINTS) data.seed(await session.client.getOverview(runId));
+      },
       onChange: (snapshot) => {
         if (snapshot.phase === 'unauthorized') signOut('revoked');
         render();

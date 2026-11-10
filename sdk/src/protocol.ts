@@ -96,6 +96,31 @@ export interface MetricsPage {
   points: WirePoint[];
 }
 
+/** One metric in an overview: exact figures, and a thinned line to draw. */
+export interface MetricOverview {
+  key: string;
+  count: number;
+  /** Lowest and highest finite value, or null when there is none. */
+  lo: number | null;
+  hi: number | null;
+  non_finite: number;
+  last_step: number;
+  last_value: WireValue;
+  /** For each slice of the step range, the point with the lowest and the one with the highest value. */
+  points: [step: number, value: number][];
+}
+
+/**
+ * A run as of cursor `head`, small enough to open quickly however long the
+ * run is. Everything after `head` comes from the stream as usual.
+ */
+export interface Overview {
+  head: number;
+  points: number;
+  buckets: number;
+  metrics: MetricOverview[];
+}
+
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: unknown };
 }

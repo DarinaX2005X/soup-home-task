@@ -1,8 +1,9 @@
 // What does opening the page of a long run cost?
 //
-// The page loads a run's whole history: there is no downsampling on the
-// server. This measures that honestly for a run the size of one day at the
-// target rate (10 points per second for 24 hours = 864 000 points).
+// Two ways to open it, for a run the size of one day at the target rate
+// (10 points per second for 24 hours = 864 000 points): reading every point
+// from the stream, which is what the page did at first, and starting from the
+// server's overview, which is what it does now above 50 000 points.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -63,7 +64,20 @@ async function main() {
   say(`points applied       ${data.count.toLocaleString('en-US')}`);
   say(`reader heap growth   about ${((process.memoryUsage().heapUsed - before) / 1e6).toFixed(0)} MB (Node, not a browser)`);
   say();
-  say('Every open page of such a run pays this on first load, and again in full after a reload.');
+  say('That is the cost of reading every point. The page now starts from the overview instead:');
+  say();
+  const overviewStartedAt = performance.now();
+  const overviewResponse = await fetch(`${WEB_URL}/api/runs/${run.id}/overview`, {
+    headers: { authorization: `Bearer ${t.secret}` },
+  });
+  const overviewText = await overviewResponse.text();
+  const overview = JSON.parse(overviewText);
+  const seeded = new RunData();
+  seeded.seed(overview);
+  say(`overview answered    ${((performance.now() - overviewStartedAt) / 1000).toFixed(1)} s`);
+  say(`transferred          ${(overviewText.length / 1e6).toFixed(2)} MB (uncompressed)`);
+  say(`points to draw       ${seeded.held.toLocaleString('en-US')} of ${seeded.count.toLocaleString('en-US')}`);
+  say(`continues from       cursor ${seeded.cursor} on the stream`);
 
   if (EVIDENCE_DIR) {
     mkdirSync(EVIDENCE_DIR, { recursive: true });

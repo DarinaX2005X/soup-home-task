@@ -1,4 +1,4 @@
-import { decodeValue, type PointsMessage, type WirePoint } from './protocol.ts';
+import { decodeValue, type Overview, type PointsMessage, type WirePoint } from './protocol.ts';
 
 export interface Series {
   /** Ascending, unique. */
@@ -10,6 +10,16 @@ export type ApplyResult =
   | { kind: 'applied'; added: number; late: LatePoint[] }
   | { kind: 'repeat' }
   | { kind: 'gap'; expected: number; got: number };
+
+/** Exact figures for one metric, kept up to date as points arrive. */
+export interface MetricStats {
+  count: number;
+  lo: number;
+  hi: number;
+  nonFinite: number;
+  lastStep: number;
+  lastValue: number;
+}
 
 export interface LatePoint {
   key: string;
@@ -23,8 +33,42 @@ export interface LatePoint {
  */
 export class RunData {
   cursor = 0;
+  /** Stored points this view accounts for. Compared with the server's count. */
   count = 0;
+  /** Points actually held here. Less than `count` when the history is thinned. */
+  held = 0;
   readonly series = new Map<string, Series>();
+  /**
+   * Set when the view started from an overview instead of the full log: the
+   * history before `head` is a thinned line, and `stats` carries the exact
+   * figures the thinned points can no longer give.
+   */
+  thinned: { head: number; total: number; shown: number } | null = null;
+  stats: Map<string, MetricStats> | null = null;
+
+  /** Starts from an overview. The stream then continues from its head. */
+  seed(overview: Overview): void {
+    this.reset();
+    this.cursor = overview.head;
+    this.count = overview.points;
+    this.stats = new Map();
+    for (const metric of overview.metrics) {
+      this.series.set(metric.key, {
+        steps: metric.points.map((p) => p[0]),
+        values: metric.points.map((p) => p[1]),
+      });
+      this.held += metric.points.length;
+      this.stats.set(metric.key, {
+        count: metric.count,
+        lo: metric.lo ?? NaN,
+        hi: metric.hi ?? NaN,
+        nonFinite: metric.non_finite,
+        lastStep: metric.last_step,
+        lastValue: decodeValue(metric.last_value) ?? NaN,
+      });
+    }
+    this.thinned = { head: overview.head, total: overview.points, shown: this.held };
+  }
 
   /**
    * Applies a stream message. A message that does not continue from the
@@ -54,7 +98,28 @@ export class RunData {
   reset(): void {
     this.cursor = 0;
     this.count = 0;
+    this.held = 0;
     this.series.clear();
+    this.thinned = null;
+    this.stats = null;
+  }
+
+  private account(key: string, step: number, value: number): void {
+    this.count++;
+    this.held++;
+    if (!this.stats) return;
+    let s = this.stats.get(key);
+    if (!s) this.stats.set(key, (s = { count: 0, lo: NaN, hi: NaN, nonFinite: 0, lastStep: -1, lastValue: NaN }));
+    s.count++;
+    if (!Number.isFinite(value)) s.nonFinite++;
+    else {
+      if (!(s.lo <= value)) s.lo = value;
+      if (!(s.hi >= value)) s.hi = value;
+    }
+    if (step > s.lastStep) {
+      s.lastStep = step;
+      s.lastValue = value;
+    }
   }
 
   private insert([key, step, wire]: WirePoint): 'new' | 'late' | 'known' {
@@ -70,7 +135,7 @@ export class RunData {
     if (last < 0 || step > steps[last]!) {
       steps.push(step);
       values.push(value);
-      this.count++;
+      this.account(key, step, value);
       return 'new';
     }
     let lo = 0;
@@ -84,7 +149,7 @@ export class RunData {
     }
     steps.splice(lo, 0, step);
     values.splice(lo, 0, value);
-    this.count++;
+    this.account(key, step, value);
     return 'late';
   }
 
