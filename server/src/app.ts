@@ -163,6 +163,20 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
   // a connection and given back when that work has ended, whatever the client
   // does with its socket in the meantime.
   const inFlight = new Map<string, number>();
+  const KEY_LANE_PER_KEY = 2;
+  const KEY_LANE_PER_PROJECT = 6;
+  const take = (slot: string, limit: number): boolean => {
+    const now = inFlight.get(slot) ?? 0;
+    if (now >= limit) return false;
+    inFlight.set(slot, now + 1);
+    return true;
+  };
+  const give = (slot: string) => {
+    const left = (inFlight.get(slot) ?? 1) - 1;
+    if (left > 0) inFlight.set(slot, left);
+    else inFlight.delete(slot);
+  };
+
   async function forProject<T>(
     projectId: string,
     fn: (tx: Tx) => Promise<T>,
@@ -171,23 +185,35 @@ export async function buildApp(db: Db, config: Config): Promise<{ app: FastifyIn
     keyLane?: string,
   ): Promise<T> {
     // Listing, revoking and rotating keys have a small allowance of their
-    // own, counted per calling key. Responding to a leaked key means reading
-    // the key list and revoking, at the moment that key keeps the project at
-    // its general allowance. And because the lane belongs to the caller, the
-    // leaked key cannot fill it for the others either.
-    const slot = keyLane ? `${projectId}:keys:${keyLane}` : projectId;
-    const limit = keyLane ? 2 : config.maxInFlightPerProject;
-    const now = inFlight.get(slot) ?? 0;
-    if (now >= limit) {
-      throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
+    // own. Responding to a leaked key means reading the key list and
+    // revoking, at the moment that key keeps the project at its general
+    // allowance.
+    //
+    // It is counted twice. Per calling key (2), so that one leaked key cannot
+    // fill it for the others. And per project (6), so that a project with
+    // many keys cannot add them up: 12 general plus 6 here stays below the
+    // pool of 20. The limit of this design: someone holding three keys of a
+    // project can fill the project-wide part and delay the others. Holding
+    // several keys of a project is being its owner, and nothing here
+    // protects a project from that.
+    const slots: [string, number][] = keyLane
+      ? [
+          [`${projectId}:keys:${keyLane}`, KEY_LANE_PER_KEY],
+          [`${projectId}:keys`, KEY_LANE_PER_PROJECT],
+        ]
+      : [[projectId, config.maxInFlightPerProject]];
+    const taken: string[] = [];
+    for (const [slot, limit] of slots) {
+      if (!take(slot, limit)) {
+        taken.forEach(give);
+        throw new HttpError(429, 'project_busy', 'This project has too many requests in progress. Retry shortly.');
+      }
+      taken.push(slot);
     }
-    inFlight.set(slot, now + 1);
     try {
       return await withProject(db, projectId, fn, writerKeyId);
     } finally {
-      const left = (inFlight.get(slot) ?? 1) - 1;
-      if (left > 0) inFlight.set(slot, left);
-      else inFlight.delete(slot);
+      taken.forEach(give);
     }
   }
 

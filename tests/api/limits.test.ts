@@ -165,6 +165,35 @@ describe('key management under a flood', () => {
     expect(await as(t.secret, 'GET', '/runs')).toBe(200);
   });
 
+  test('many keys cannot add their key-management allowances up past the project-wide one', async () => {
+    const t = await newTenant('limit-sum');
+    const victim = await t.client.createKey('victim');
+    const others = [];
+    for (let i = 0; i < 4; i++) others.push(await t.client.createKey(`k${i}`));
+    const run = await t.client.createRun();
+    const as = (secret: string, method: string, path: string) =>
+      fetch(API_URL + path, { method, headers: { authorization: `Bearer ${secret}` } }).then((r) => r.status);
+    // A slow write with the victim key makes every revocation of it wait.
+    const slowWrite = fetch(`${API_URL}/runs/${run.id}/metrics`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${victim.secret}`, 'content-type': 'application/json', 'x-test-fault': 'delay:1500' },
+      body: JSON.stringify(batchOf(series('m', 0, 2))),
+    });
+    await sleep(200);
+    // Three keys, two waiting revocations each: six in progress for the project.
+    const waiting = others.slice(0, 3).flatMap((k) => [
+      as(k.secret, 'DELETE', `/keys/${victim.id}`),
+      as(k.secret, 'DELETE', `/keys/${victim.id}`),
+    ]);
+    await sleep(200);
+    // A fourth key has its own lane free, but the project-wide one is full.
+    expect(await as(others[3]!.secret, 'GET', '/keys')).toBe(429);
+    await slowWrite;
+    const done = await Promise.all(waiting);
+    expect(done.filter((s) => s === 204)).toHaveLength(1);
+    expect(await as(others[3]!.secret, 'GET', '/keys')).toBe(200);
+  });
+
   test('a project cannot pile up keys without end', async () => {
     const t = await newTenant('limit-count');
     const statuses = [];

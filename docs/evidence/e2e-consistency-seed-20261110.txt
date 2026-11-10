@@ -4,10 +4,10 @@ at 20%: cut 1 open stream(s) between events
 at 45%: browser network down for 3 s while ingestion continues
 at 75%: next stream chunk cut in half
 late phase: 37 held-back deliveries sent while the browser is offline
-ingest client: {"attempts":280,"retries":59,"replayed":54,"accepted":2319,"duplicates":293,"conflicts":5}
-client network: {"requests":280,"droppedRequests":34,"droppedResponses":25,"delayed":220,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
+ingest client: {"attempts":281,"retries":60,"replayed":55,"accepted":2286,"duplicates":268,"conflicts":5}
+client network: {"requests":281,"droppedRequests":36,"droppedResponses":24,"delayed":221,"streamCuts":0,"streamCutsMidChunk":0,"refusedWhileDown":0}
 browser network: {"requests":21,"droppedRequests":0,"droppedResponses":0,"delayed":0,"streamCuts":3,"streamCutsMidChunk":1,"refusedWhileDown":0}
 page: {"state":"live","cursor":164,"count":2520,"connects":5,"resyncs":0,"gaps":0}
-samples while running: 95, furthest behind 75 batches, saw offline=true, saw catching up=false
+samples while running: 105, furthest behind 75 batches, saw offline=true, saw catching up=false
 stored: 2520 points in 5 metrics; CSV rows compared: 2520; chart vertices compared: 2498
 RESULT: database = expected truth = API = page CSV = page summary = chart geometry; fresh reload = same
